@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ShowSchedule</title>
+<meta name="description" content="Livestock show entries, live ring schedule, results and series points.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23221c15'/%3E%3Ctext x='32' y='44' font-size='34' text-anchor='middle' fill='%23f4efe4' font-family='Arial' font-weight='700'%3ES%3C/text%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=Barlow+Condensed:wght@600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<header><div class="hwrap">
+  <div class="brand"><h1 id="showName">ShowSchedule</h1><span class="meta" id="showMeta"></span><span style="flex:1"></span><a id="acct" href="#account" class="acct"></a></div>
+  <nav id="tabs"></nav>
+</div></header>
+<main><div class="wrap" id="app"><div class="empty muted">Loading…</div></div></main>
+<div id="ringbar"></div>
+<div id="toast"></div>
+<noscript><p style="padding:16px">ShowSchedule needs JavaScript turned on.</p></noscript>
+<script type="module" src="app.js"></script>
+</body>
+</html>
