@@ -20,5 +20,9 @@
 <div id="toast"></div>
 <noscript><p style="padding:16px">ShowSchedule needs JavaScript turned on.</p></noscript>
 <script type="module" src="app.js"></script>
+<script>
+  // If the app can't start (blocked script, very old browser), say so instead of spinning forever.
+  setTimeout(function(){ if(!window.__ssBooted){ var a=document.getElementById('app'); if(a) a.innerHTML='<div class="card"><h3>The app couldn\u2019t start</h3><p class="muted">Try refreshing. If you use an ad or script blocker, allow cdn.jsdelivr.net and supabase.co for this site. Older browsers (before 2020) aren\u2019t supported.</p></div>'; } }, 8000);
+</script>
 </body>
 </html>

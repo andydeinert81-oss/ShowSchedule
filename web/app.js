@@ -500,7 +500,7 @@ function viewAccount(){
   if(!S.uid){
     const tab = S.authTab || 'login';
     const tabs = `<div class="seg">${[['login','Log in'],['signup','Create account'],['forgot','Forgot password']].map(([k,l]) => `<button class="${tab===k?'on':''}" data-act="authTab" data-k="${k}">${l}</button>`).join('')}</div>`;
-    const msg = S.authMsg ? `<div class="banner info">${esc(S.authMsg)}</div>` : '';
+    const msg = (S.authMsg ? `<div class="banner info">${esc(S.authMsg)}</div>` : '') + (S.authErr ? `<div class="banner warn"><b>Couldn’t ${tab==='signup'?'create the account':tab==='forgot'?'send the reset email':'log in'}.</b> ${esc(S.authErr)}${S.authErrRaw && S.authErrRaw !== S.authErr ? `<div class="small muted" style="margin-top:4px">Details: ${esc(S.authErrRaw)}</div>` : ''}</div>` : '');
     let form = '';
     if(tab === 'login') form = `<form data-form="login"><label>Email</label><input class="in" name="email" type="email" autocomplete="email" required>
       <label style="margin-top:10px">Password</label><input class="in" name="password" type="password" autocomplete="current-password" required>
@@ -1142,7 +1142,7 @@ document.addEventListener('click', e => {
       if(S.confirmDel !== 'show|'+el.dataset.id){ S.confirmDel = 'show|'+el.dataset.id; const l = $('#showList'); if(l) l.innerHTML = showListHTML(); return; }
       S.confirmDel = null; deleteShow(el.dataset.id);
       break;
-    case 'authTab': S.authTab = el.dataset.k; S.authMsg = ''; render(true); break;
+    case 'authTab': S.authTab = el.dataset.k; S.authMsg = ''; S.authErr = ''; render(true); break;
     case 'logout': sb.auth.signOut().then(() => { toast('Logged out'); location.hash = 'shows'; }); break;
     case 'showWhen': S.showWhen = el.dataset.k; render(true); break;
     case 'addMgr': { const m = [...new Set([...(c.managers||[]), el.dataset.id])]; S.mgrHits = []; saveState({managers:m}).then(()=>toast('Manager added')); break; }
@@ -1400,11 +1400,26 @@ async function loadMe(){
 }
 
 /* ================= forms (login, sign-up, password, name) ================= */
+function authHelp(m){
+  if(/database error saving new user/i.test(m)) return 'The database isn’t set up yet. The site owner needs to run supabase/schema.sql in the Supabase SQL Editor.';
+  if(/rate limit/i.test(m)) return 'Too many sign-up or reset emails were sent in the last hour. Wait a bit and try again (the site owner can raise this limit by adding an email service in Supabase).';
+  if(/not authori[sz]ed/i.test(m) && /email/i.test(m)) return 'Supabase’s built-in email only sends to addresses on your Supabase team. Use the email you log in to Supabase with, or add an email service (SMTP) in Supabase.';
+  if(/signups? not allowed|signup is disabled/i.test(m)) return 'New sign-ups are turned off. In Supabase: Authentication → Sign In / Providers → turn on “Allow new users to sign up”.';
+  if(/already registered|already been registered/i.test(m)) return 'That email already has an account. Use Log in, or Forgot password if you don’t remember it.';
+  if(/email not confirmed/i.test(m)) return 'Confirm your email first: open the message we sent and tap the link, then log in.';
+  if(/invalid login credentials/i.test(m)) return 'That email and password don’t match an account.';
+  if(/invalid api key|no api key|apikey/i.test(m)) return 'The site’s Supabase key isn’t accepted. Check web/config.js against Supabase → Project Settings → API Keys.';
+  if(/failed to fetch|network|load failed/i.test(m)) return 'Couldn’t reach the database server. Check your connection; if it keeps happening, the Supabase project may be paused or the URL in web/config.js is wrong.';
+  if(/password/i.test(m) && /(short|least|weak|characters)/i.test(m)) return m;
+  if(/email/i.test(m) && /invalid/i.test(m)) return 'Supabase didn’t accept that email address. Use a real address you can open.';
+  return m;
+}
 document.addEventListener('submit', async e => {
   const f = e.target; if(!f.dataset || !f.dataset.form) return;
   e.preventDefault();
   const v = Object.fromEntries(new FormData(f)), btn = f.querySelector('button[type=submit]');
   if(btn) btn.disabled = true;
+  S.authErr = ''; S.authErrRaw = '';
   try{
     switch(f.dataset.form){
       case 'login': {
@@ -1433,7 +1448,11 @@ document.addEventListener('submit', async e => {
         if(error) throw error;
         S.myName = name; toast('Name saved'); render(true); break; }
     }
-  }catch(err){ toast((err && err.message) || String(err), true); }
+  }catch(err){
+    const raw = (err && (err.message || err.error_description)) || String(err);
+    if(['login','signup','forgot','newpw'].includes(f.dataset.form)){ S.authErr = authHelp(raw); S.authErrRaw = raw; render(true); }
+    else toast(raw, true);
+  }
   finally{ if(btn) btn.disabled = false; }
 });
 
@@ -1444,6 +1463,7 @@ function setupHTML(){
 
 /* ================= boot ================= */
 (async () => {
+  window.__ssBooted = true;
   if(!sb){ S.noDb = true; render(true); return; }
   sb.auth.onAuthStateChange((event, session) => {
     if(event === 'PASSWORD_RECOVERY'){ S.recovery = true; location.hash = 'account'; }
