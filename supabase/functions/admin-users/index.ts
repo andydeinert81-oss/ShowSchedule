@@ -1,6 +1,6 @@
 // ShowSchedule — admin user management (Supabase Edge Function "admin-users").
 //
-// Runs on Supabase's servers, where the service-role key is available automatically.
+// Runs on Supabase's servers, where the project's secret key is available automatically.
 // That key never reaches the website. Every request must come from a logged-in
 // account whose profile role is 'admin'; anyone else gets a 403.
 //
@@ -21,21 +21,37 @@ const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { ...CORS, 'Content-Type': 'application/json' } });
 const ROLES = ['exhibitor', 'manager', 'admin'];
 
+// The server-side key. Newer projects provide SUPABASE_SECRET_KEYS, a JSON dictionary of
+// secret keys like {"default":"sb_secret_..."}; older ones provide SUPABASE_SERVICE_ROLE_KEY.
+function serverKey(): string {
+  const raw = Deno.env.get('SUPABASE_SECRET_KEYS');
+  if (raw) {
+    try {
+      const keys = JSON.parse(raw) as Record<string, string>;
+      const k = keys.default || Object.values(keys)[0];
+      if (k) return String(k);
+    } catch { /* fall through to the legacy key */ }
+  }
+  return Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS });
   if (req.method !== 'POST') return json({ error: 'Use POST.' }, 405);
   try {
     const url = Deno.env.get('SUPABASE_URL');
-    const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
-    if (!url || !serviceKey) return json({ error: 'The function is missing its Supabase settings.' }, 500);
+    const serviceKey = serverKey();
+    if (!url || !serviceKey) return json({ error: 'The function is missing its Supabase settings (no secret key).' }, 500);
     const admin = createClient(url, serviceKey, { auth: { persistSession: false, autoRefreshToken: false } });
 
     // Who is calling? Must be a logged-in admin.
     const token = (req.headers.get('Authorization') || '').replace(/^Bearer\s+/i, '');
     const { data: who, error: whoErr } = await admin.auth.getUser(token);
     if (whoErr || !who?.user) return json({ error: 'Please log in again.' }, 401);
-    const { data: me } = await admin.from('profiles').select('role').eq('id', who.user.id).maybeSingle();
-    if (me?.role !== 'admin') return json({ error: 'Only admins can manage users.' }, 403);
+    const { data: me, error: meErr } = await admin.from('profiles').select('role').eq('id', who.user.id).maybeSingle();
+    if (meErr) return json({ error: 'Couldn’t check your role: ' + meErr.message }, 500);
+    if (!me) return json({ error: 'Couldn’t find your profile. Log out and back in, then try again.' }, 403);
+    if (me.role !== 'admin') return json({ error: 'Only admins can manage users.' }, 403);
 
     const body = await req.json().catch(() => ({}));
     switch (body.action) {
