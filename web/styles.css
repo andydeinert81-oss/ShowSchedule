@@ -159,3 +159,17 @@ tr.inel td{opacity:.6}
 .acct{color:#f7f1e3;text-decoration:none;font-weight:600;font-size:.9rem;display:inline-flex;align-items:center;gap:8px;background:#3a3127;border-radius:99px;padding:5px 12px 5px 5px;align-self:center}
 .acct .av{width:24px;height:24px;border-radius:50%;background:var(--rust);color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:.8rem}
 .acct.out{background:var(--rust);padding:6px 14px}
+
+/* landing page */
+.landing{display:grid;grid-template-columns:1.15fr 1fr;gap:28px;align-items:start;margin-top:8px}
+.landing .eyebrow{font:700 .78rem/1 Barlow;text-transform:uppercase;letter-spacing:.14em;color:var(--rust)}
+.landing .headline{font:700 2.5rem/1.05 "Barlow Condensed",Barlow,sans-serif;margin:10px 0 12px}
+.landing .lede{font-size:1.08rem;color:var(--muted);margin:0 0 16px;max-width:36em}
+.perks{list-style:none;padding:0;margin:0;display:grid;gap:10px}
+.perks li{background:var(--card);border:1px solid var(--line);border-left:4px solid var(--green);border-radius:10px;padding:10px 14px}
+.door .card{max-width:none !important;margin:0 !important;box-shadow:0 10px 30px rgba(34,28,21,.08)}
+.soon{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px}
+.soon .mini .chip{display:inline-block;margin-top:6px}
+body.on-welcome #acct{display:none}
+@media (max-width:760px){.landing{grid-template-columns:1fr}.landing .headline{font-size:2rem}.door{order:-1}.pitch .perks{display:none}}
+.landing a,.door a{color:var(--rust);font-weight:600}

@@ -493,27 +493,28 @@ function showListHTML(){
 
 /* ================= view: account ================= */
 const ROLE_TEXT = {admin:'Admin – can create shows and series, manage every show, and set user roles', manager:'Show manager – can create shows and series and run the shows you manage', exhibitor:'Exhibitor – can keep a barn and enter shows'};
+function authCardHTML(){
+  const tab = S.authTab || 'login';
+  const tabs = `<div class="seg">${[['login','Log in'],['signup','Create account'],['forgot','Forgot password']].map(([k,l]) => `<button class="${tab===k?'on':''}" data-act="authTab" data-k="${k}">${l}</button>`).join('')}</div>`;
+  const msg = (S.authMsg ? `<div class="banner info">${esc(S.authMsg)}</div>` : '') + (S.authErr ? `<div class="banner warn"><b>Couldn’t ${tab==='signup'?'create the account':tab==='forgot'?'send the reset email':'log in'}.</b> ${esc(S.authErr)}${S.authErrRaw && S.authErrRaw !== S.authErr ? `<div class="small muted" style="margin-top:4px">Details: ${esc(S.authErrRaw)}</div>` : ''}</div>` : '');
+  let form = '';
+  if(tab === 'login') form = `<form data-form="login"><label>Email</label><input class="in" name="email" type="email" autocomplete="email" required>
+    <label style="margin-top:10px">Password</label><input class="in" name="password" type="password" autocomplete="current-password" required>
+    <div class="row-actions"><button class="btn pri" type="submit">Log in</button></div></form>`;
+  if(tab === 'signup') form = `<form data-form="signup"><label>Your name</label><input class="in" name="name" autocomplete="name" required placeholder="Parent or manager name">
+    <label style="margin-top:10px">Email</label><input class="in" name="email" type="email" autocomplete="email" required>
+    <label style="margin-top:10px">Password (8+ characters)</label><input class="in" name="password" type="password" minlength="8" autocomplete="new-password" required>
+    <p class="muted small">One account per family is enough. You’ll add each showman in My barn.</p>
+    <div class="row-actions"><button class="btn pri" type="submit">Create account</button></div></form>`;
+  if(tab === 'forgot') form = `<form data-form="forgot"><label>Email</label><input class="in" name="email" type="email" autocomplete="email" required>
+    <div class="row-actions"><button class="btn pri" type="submit">Email me a reset link</button></div></form>`;
+  return `<div class="card" style="max-width:440px;margin:0 auto"><h3>Your ShowSchedule account</h3>${tabs}${msg}${form}</div>`;
+}
 function viewAccount(){
   if(S.recovery) return `<div class="card" style="max-width:440px;margin:0 auto"><h3>Set a new password</h3>
     <form data-form="newpw"><label>New password</label><input class="in" name="password" type="password" minlength="8" autocomplete="new-password" required>
     <div class="row-actions"><button class="btn pri" type="submit">Save password</button></div></form></div>`;
-  if(!S.uid){
-    const tab = S.authTab || 'login';
-    const tabs = `<div class="seg">${[['login','Log in'],['signup','Create account'],['forgot','Forgot password']].map(([k,l]) => `<button class="${tab===k?'on':''}" data-act="authTab" data-k="${k}">${l}</button>`).join('')}</div>`;
-    const msg = (S.authMsg ? `<div class="banner info">${esc(S.authMsg)}</div>` : '') + (S.authErr ? `<div class="banner warn"><b>Couldn’t ${tab==='signup'?'create the account':tab==='forgot'?'send the reset email':'log in'}.</b> ${esc(S.authErr)}${S.authErrRaw && S.authErrRaw !== S.authErr ? `<div class="small muted" style="margin-top:4px">Details: ${esc(S.authErrRaw)}</div>` : ''}</div>` : '');
-    let form = '';
-    if(tab === 'login') form = `<form data-form="login"><label>Email</label><input class="in" name="email" type="email" autocomplete="email" required>
-      <label style="margin-top:10px">Password</label><input class="in" name="password" type="password" autocomplete="current-password" required>
-      <div class="row-actions"><button class="btn pri" type="submit">Log in</button></div></form>`;
-    if(tab === 'signup') form = `<form data-form="signup"><label>Your name</label><input class="in" name="name" autocomplete="name" required placeholder="Parent or manager name">
-      <label style="margin-top:10px">Email</label><input class="in" name="email" type="email" autocomplete="email" required>
-      <label style="margin-top:10px">Password (8+ characters)</label><input class="in" name="password" type="password" minlength="8" autocomplete="new-password" required>
-      <p class="muted small">One account per family is enough. You’ll add each showman in My barn.</p>
-      <div class="row-actions"><button class="btn pri" type="submit">Create account</button></div></form>`;
-    if(tab === 'forgot') form = `<form data-form="forgot"><label>Email</label><input class="in" name="email" type="email" autocomplete="email" required>
-      <div class="row-actions"><button class="btn pri" type="submit">Email me a reset link</button></div></form>`;
-    return `<div class="card" style="max-width:440px;margin:0 auto"><h3>Your ShowSchedule account</h3>${tabs}${msg}${form}</div>`;
-  }
+  if(!S.uid) return authCardHTML();
   const managed = Object.entries(S.shows).filter(([id, s]) => (s.managers||[]).includes(S.uid));
   return `<div class="card"><h3>Your account</h3>
     <p style="margin:6px 0">Logged in as <b>${esc(S.myName)}</b> <span class="muted small">${esc(S.email)}</span></p>
@@ -521,6 +522,32 @@ function viewAccount(){
     <form data-form="name" style="display:flex;gap:8px;align-items:end;flex-wrap:wrap"><div style="flex:1;min-width:200px"><label>Display name</label><input class="in" name="name" value="${esc(S.myName)}" required></div><button class="btn" type="submit">Save name</button></form>
     <div class="row-actions"><a class="btn" href="#barn" style="text-decoration:none">My barn</a>${S.isOwner ? `<a class="btn" href="#users" style="text-decoration:none">Users &amp; roles</a>` : ''}<span style="flex:1"></span><button class="btn danger" data-act="logout">Log out</button></div></div>
     ${S.role === 'exhibitor' ? `<p class="muted small">Running a show? Ask the site admin to make your account a show manager.</p>` : ''}`;
+}
+function viewWelcome(){
+  if(!S.authReady) return loading();
+  const today = new Date().toISOString().slice(0,10);
+  const soon = Object.entries(S.shows).filter(([, x]) => !x.date || x.date >= today || showStatus(x).k === 'ring')
+    .sort((a,b) => (a[1].date||'9999').localeCompare(b[1].date||'9999')).slice(0, 4);
+  const liveNow = soon.filter(([, x]) => showStatus(x).k === 'ring');
+  return `<div class="landing">
+    <section class="pitch">
+      <div class="eyebrow">Livestock show entries · live ring · points</div>
+      <h2 class="headline">Know what’s in the ring before you hear it on the speaker.</h2>
+      <p class="lede">ShowSchedule keeps your family’s showmen and animals in one barn, enters you in shows with a few taps, and follows the ring live so you’re never late to your class.</p>
+      <ul class="perks">
+        <li><b>Enter once, show all season.</b> Save your kids and your cattle, sheep, goats and hogs, then check boxes for each show.</li>
+        <li><b>Live ring updates.</b> See what’s in the ring, on deck and in the hole, with a countdown to your classes.</li>
+        <li><b>Results and series points.</b> Placings, champions and season standings as soon as the judge decides.</li>
+        <li><b>Built for show managers too.</b> Divisions, class splits, back numbers, ring control and placings in one place.</li>
+      </ul>
+    </section>
+    <section class="door">${authCardHTML()}
+      <p class="muted small" style="text-align:center;margin:10px 0 0">Just watching? <a href="#shows">Follow a show without an account →</a></p>
+    </section>
+  </div>
+  ${soon.length ? `<h2>${liveNow.length ? 'Happening now & coming up' : 'Coming up'}</h2><div class="soon">${soon.map(([id, x]) => { const st = showStatus(x); return `<a class="mini" href="#live-${esc(id)}" style="text-decoration:none;color:inherit">
+      <div class="lab">${esc(shortDate(x.date) || 'Date TBA')}${x.location ? ' · ' + esc(x.location) : ''}</div><div class="t">${esc(x.name || 'Untitled show')}</div>
+      <span class="chip ${st.k}">${esc(st.label)}</span></a>`; }).join('')}</div>` : ''}`;
 }
 function viewUsers(){
   if(!S.isOwner) return `<div class="card empty"><h3>Admins only</h3></div>`;
@@ -1021,6 +1048,7 @@ function render(force){
   if(!force && isTyping()){ S.pending = true; return; }
   S.pending = false;
   if(!sb){ $('#app').innerHTML = setupHTML(); return; }
+  if(S.view === 'welcome' && S.authReady && S.uid){ S.view = 'shows'; history.replaceState(null, '', '#shows'); }
   rebuildLookup();
   const inShow = ['live','results','enter','office'].includes(S.view) && S.showId;
   const c = cfg(), show = S.shows[S.showId];
@@ -1031,13 +1059,14 @@ function render(force){
     const t = [['live','Live'],['results','Results'],['enter','Enter']]; if(isManager()) t.push(['office','Show office']);
     nav += `<span style="width:1px;background:#4a4136;margin:6px 6px"></span>` + t.map(([k,l]) => `<a href="#${k}-${esc(S.showId)}" class="${S.view===k?'on':''}">${l}</a>`).join('');
   }
-  $('#tabs').innerHTML = nav;
+  $('#tabs').innerHTML = S.view === 'welcome' ? '' : nav;
+  document.body.classList.toggle('on-welcome', S.view === 'welcome');
   const fid = document.activeElement && ['search','resFilter','mgrSearch','showSearch','userQ'].includes(document.activeElement.id) ? document.activeElement.id : null;
   const pos = fid ? document.activeElement.selectionStart : null;
   const ac = $('#acct');
   if(S.uid && !S.noDb){ const n = S.myName || 'Account'; ac.className = 'acct'; ac.innerHTML = `<span class="av">${esc(n.trim()[0]||'?').toUpperCase()}</span>${esc(n.split(' ')[0])}`; }
   else { ac.className = 'acct out'; ac.textContent = 'Log in'; }
-  const V = {users:viewUsers, account:viewAccount, shows:viewShows, barn:viewBarn, live:viewLive, results:viewResults, enter:viewEnter, office:viewOffice, series:viewSeriesList, seriesOne:viewSeries}[S.view] || viewShows;
+  const V = {welcome:viewWelcome, users:viewUsers, account:viewAccount, shows:viewShows, barn:viewBarn, live:viewLive, results:viewResults, enter:viewEnter, office:viewOffice, series:viewSeriesList, seriesOne:viewSeries}[S.view] || viewShows;
   $('#app').innerHTML = V();
   if(fid && document.getElementById(fid)){ const s = document.getElementById(fid); s.focus(); try{ s.setSelectionRange(pos, pos); }catch(e){} }
   renderRingbar();
@@ -1143,7 +1172,7 @@ document.addEventListener('click', e => {
       S.confirmDel = null; deleteShow(el.dataset.id);
       break;
     case 'authTab': S.authTab = el.dataset.k; S.authMsg = ''; S.authErr = ''; render(true); break;
-    case 'logout': sb.auth.signOut().then(() => { toast('Logged out'); location.hash = 'shows'; }); break;
+    case 'logout': sb.auth.signOut().then(() => { toast('Logged out'); location.hash = 'welcome'; }); break;
     case 'showWhen': S.showWhen = el.dataset.k; render(true); break;
     case 'addMgr': { const m = [...new Set([...(c.managers||[]), el.dataset.id])]; S.mgrHits = []; saveState({managers:m}).then(()=>toast('Manager added')); break; }
     case 'rmMgr': saveState({managers:(c.managers||[]).filter(x => x !== el.dataset.id)}); break;
@@ -1314,7 +1343,9 @@ function route(){
   const m = h.match(/^(live|results|enter|office)-([A-Za-z0-9]+)$/), sm = h.match(/^series-([A-Za-z0-9]+)$/);
   if(m){ if(S.showId !== m[2]){ S.editing = null; S.setDraft = {}; S.showSettings = false; S.expanded = new Set(); S.placeClass = null; S.placeDraft = {}; S.mgrHits = []; } S.view = m[1]; S.showId = m[2]; if(S.openSettingsFor === m[2]){ S.showSettings = true; S.openSettingsFor = null; } }
   else if(sm){ if(S.seriesId !== sm[1]){ S.serDraft = null; S.serCat = 'overall'; S.serBreed = ''; } S.view = 'seriesOne'; S.seriesId = sm[1]; }
-  else S.view = ['barn','series','account','users'].includes(h) ? h : 'shows';
+  else S.view = ['barn','series','account','users','shows'].includes(h) ? h : 'welcome';
+  if(['account','welcome'].includes(S.view) && S.lastHash && !/^(account|welcome)?$/.test(S.lastHash)) S.returnTo = S.lastHash;
+  S.lastHash = h;
   if(S.view === 'users') S.users = null;
   S.confirmDel = null; S.confirmShowDel = false;
   render(true); window.scrollTo(0,0);
@@ -1396,6 +1427,7 @@ async function loadMe(){
     S.isAdmin = S.role === 'admin' || S.role === 'manager';
     S.barn = b ? b.data : null; S.barnLoaded = true;
   }
+  S.authReady = true;
   render();
 }
 
@@ -1425,13 +1457,13 @@ document.addEventListener('submit', async e => {
       case 'login': {
         const {error} = await sb.auth.signInWithPassword({email:v.email.trim(), password:v.password});
         if(error) throw error;
-        S.authMsg = ''; toast('Logged in'); location.hash = 'shows'; break; }
+        S.authMsg = ''; toast('Logged in'); location.hash = S.returnTo || 'shows'; S.returnTo = null; break; }
       case 'signup': {
         if((v.password||'').length < 8) throw new Error('Use at least 8 characters for your password.');
         const {data, error} = await sb.auth.signUp({email:v.email.trim(), password:v.password, options:{data:{display_name:v.name.trim()}, emailRedirectTo: siteUrl()}});
         if(error) throw error;
         if(!data.session){ S.authMsg = `Almost done: open the email we sent to ${v.email.trim()} and tap the link to confirm, then log in.`; S.authTab = 'login'; render(true); }
-        else { toast('Account created'); location.hash = 'barn'; }
+        else { toast('Account created'); location.hash = S.returnTo || 'barn'; S.returnTo = null; }
         break; }
       case 'forgot': {
         const {error} = await sb.auth.resetPasswordForEmail(v.email.trim(), {redirectTo: siteUrl()});
