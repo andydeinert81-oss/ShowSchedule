@@ -574,32 +574,63 @@ function opts(list, val, ph){
   return (ph != null ? `<option value="">${esc(ph)}</option>` : '') + all.map(o => `<option${o===val?' selected':''}>${esc(o)}</option>`).join('');
 }
 function breedsFor(sp){ const s = new Set(SPECIES[sp].breeds); Object.values(S.shows).forEach(x => { const c = normShow(x); DIVS.filter(d => d.species===sp).forEach(d => c.divs[d.key].breeds.forEach(b => s.add(b))); }); return [...s].sort(); }
+function barnTabsHTML(d){
+  const tab = S.barnTab || 'showmen';
+  const link = (k, label, n) => `<a href="#barn-${k}" class="${tab===k?'on':''}">${label} <span class="cnt">${n}</span></a>`;
+  return `<div class="subtabs">${link('showmen', 'Showmen', d.showmen.length)}${link('animals', 'Animals', d.animals.length)}</div>`;
+}
 function viewBarn(){
   if(S.noDb || !S.uid) return signInMsg('set up your barn');
   if(!S.barnLoaded) return loading();
   if(S.canWrite === false) return viewOnlyMsg();
-  const d = getBarnDraft();
+  const d = getBarnDraft(), tab = S.barnTab || 'showmen';
   let h = `<div class="who-bar"><h2 style="margin:0">My barn</h2><span class="muted small">${S.myName ? 'Signed in as <b>'+esc(S.myName)+'</b>' : ''}</span></div>
-    <p class="muted" style="margin-top:0">Save your showmen and animals once. Each show, just check who and what you’re bringing. Only you can see your barn. A show sees only what you enter.</p>`;
-  h += `<div class="card"><h3>Showmen</h3>`;
-  if(!d.showmen.length) h += `<p class="muted small">Add each kid (or adult) who shows.</p>`;
+    <p class="muted" style="margin-top:0">Save your showmen and animals once. Each show, just check who and what you’re bringing. Only you can see your barn. A show sees only what you enter.</p>
+    ${barnTabsHTML(d)}`;
+  h += tab === 'animals' ? barnAnimalsHTML(d) : barnShowmenHTML(d);
+  h += `<div class="savebar"><span class="muted small" style="flex:1">${S.barnDirty ? 'Unsaved changes to your barn' : (S.barn ? 'All changes saved' : '')}</span><button class="btn pri" data-act="saveBarn">Save barn</button></div>`;
+  return h;
+}
+function barnShowmenHTML(d){
+  let h = `<div class="card"><div style="display:flex;justify-content:space-between;align-items:center;gap:10px"><h3 style="margin:0">Showmen</h3><button class="btn sm pri" data-act="addSm">+ Add showman</button></div>`;
+  if(!d.showmen.length) h += `<p class="muted">Add each kid (or adult) who shows. Their birth date sets their showmanship division automatically each year.</p>`;
   d.showmen.forEach((sm, i) => {
     const age = ageFor(sm, {ageJan1:true, date:''});
-    h += `<div class="exh"><div class="grid g4">
+    const mine = d.animals.filter(a => a.showmanId === sm.id);
+    const bySp = SP_ORDER.map(sp => [sp, mine.filter(a => (a.species||'cattle') === sp).length]).filter(([, n]) => n);
+    h += `<div class="exh" style="margin-top:12px"><div class="grid g4">
       <div><label>First name</label><input class="in" data-b="showmen.${i}.first" value="${esc(sm.first)}"></div>
       <div><label>Last name</label><input class="in" data-b="showmen.${i}.last" value="${esc(sm.last)}"></div>
       <div><label>Birth date</label><input class="in" type="date" data-b="showmen.${i}.birthdate" value="${esc(sm.birthdate)}"></div>
       <div><label>Hometown / club</label><input class="in" data-b="showmen.${i}.town" value="${esc(sm.town)}"></div></div>
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-top:8px">
         <span class="muted small">${sm.birthdate ? `Showmanship age this year: <b>${age}</b>` : (sm.age ? `Age on file: ${esc(sm.age)}. Add a birth date so it updates each year.` : 'Birth date sets their showmanship division.')}</span>
-        <button class="btn sm ghost" data-act="rmSm" data-i="${i}">Remove</button></div></div>`;
+        <span style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <button class="btn sm" data-act="barnSmAnimals" data-id="${esc(sm.id)}">${mine.length ? `${mine.length} animal${mine.length===1?'':'s'}${bySp.length ? ' · ' + bySp.map(([sp, n]) => `${n} ${SPECIES[sp].label.toLowerCase()}`).join(', ') : ''}` : 'Add animals'} →</button>
+          <button class="btn sm ghost" data-act="rmSm" data-i="${i}">Remove</button></span></div></div>`;
   });
-  h += `<button class="btn sm" data-act="addSm">+ Add showman</button></div>`;
-  h += `<div class="card"><h3>Animals</h3>`;
-  if(!d.animals.length) h += `<p class="muted small">Add each animal and who shows it. Market weights can be updated for each show when you enter.</p>`;
-  d.animals.forEach((an, i) => {
-    const sp = an.species || 'cattle';
-    h += `<div class="exh"><div class="grid g4">
+  return h + `</div>`;
+}
+function barnAnimalsHTML(d){
+  if(!d.showmen.length) return `<div class="card empty"><h3>Add a showman first</h3><p class="muted">Every animal needs someone to show it.</p><a class="btn pri" href="#barn-showmen" style="text-decoration:none">Go to Showmen</a></div>`;
+  const fSm = S.barnSm || '', fSp = S.barnSp || '';
+  const shown = d.animals.map((an, i) => ({an, i})).filter(({an}) =>
+    (!fSm || (fSm === 'none' ? !d.showmen.some(x => x.id === an.showmanId) : an.showmanId === fSm)) && (!fSp || (an.species||'cattle') === fSp));
+  const unassigned = d.animals.filter(a => !d.showmen.some(x => x.id === a.showmanId)).length;
+  let h = `<div class="card"><div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><h3 style="margin:0">Animals</h3><button class="btn sm pri" data-act="addBa">+ Add animal</button></div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin:12px 0 4px">
+      <select class="in" id="barnSm" style="width:auto"><option value="">All showmen</option>${d.showmen.map(sm => `<option value="${esc(sm.id)}"${fSm===sm.id?' selected':''}>${esc(smName(sm)||'Unnamed')}</option>`).join('')}${unassigned ? `<option value="none"${fSm==='none'?' selected':''}>No showman yet (${unassigned})</option>` : ''}</select>
+      <select class="in" id="barnSp" style="width:auto"><option value="">All species</option>${SP_ORDER.map(sp => `<option value="${sp}"${fSp===sp?' selected':''}>${esc(SPECIES[sp].label)}</option>`).join('')}</select>
+      ${fSm || fSp ? `<button class="btn sm ghost" data-act="barnClear">Show all</button>` : ''}
+    </div>`;
+  if(!d.animals.length) h += `<p class="muted">Add each animal and who shows it. Market weights can be updated for each show when you enter.</p>`;
+  else if(!shown.length) h += `<p class="muted">No animals match these filters.</p>`;
+  else h += `<div class="muted small">${shown.length === d.animals.length ? `${d.animals.length} animal${d.animals.length===1?'':'s'}` : `Showing ${shown.length} of ${d.animals.length}`}</div>`;
+  for(const {an, i} of shown){
+    const sp = an.species || 'cattle', owner = d.showmen.find(x => x.id === an.showmanId);
+    h += `<div class="exh" style="margin-top:12px">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px"><b>${esc(an.name || 'New animal')}</b><span class="pill">${esc(SPECIES[sp].label)}${owner ? ' · ' + esc(owner.first || '') : ' · <span class="warn-t">needs a showman</span>'}</span></div>
+      <div class="grid g4">
       <div><label>Species</label><select class="in" data-b="animals.${i}.species">${SP_ORDER.map(k => `<option value="${k}"${k===sp?' selected':''}>${SPECIES[k].label}</option>`).join('')}</select></div>
       <div><label>Animal name</label><input class="in" data-b="animals.${i}.name" value="${esc(an.name)}"></div>
       <div><label>Breed</label><select class="in" data-b="animals.${i}.breed">${opts(breedsFor(sp), an.breed, 'Choose breed')}</select></div>
@@ -609,10 +640,8 @@ function viewBarn(){
       <div><label>Birth date</label><input class="in" type="date" data-b="animals.${i}.birthdate" value="${esc(an.birthdate)}"></div>
       <div><label>Latest weight (lb)</label><input class="in" type="number" min="0" data-b="animals.${i}.weight" value="${esc(an.weight)}"></div>
       </div><div style="text-align:right;margin-top:8px"><button class="btn sm ghost" data-act="rmBa" data-i="${i}">Remove</button></div></div>`;
-  });
-  h += `<button class="btn sm" data-act="addBa"${d.showmen.length?'':' disabled'}>+ Add animal</button>${d.showmen.length?'':' <span class="muted small">Add a showman first.</span>'}</div>`;
-  h += `<div class="savebar"><span class="muted small" style="flex:1">${S.barnDirty ? 'Unsaved changes' : (S.barn ? 'All changes saved' : '')}</span><button class="btn pri" data-act="saveBarn">Save barn</button></div>`;
-  return h;
+  }
+  return h + `</div>`;
 }
 
 /* ================= view: enter ================= */
@@ -1199,14 +1228,22 @@ document.addEventListener('click', e => {
       enqueue(async () => { const {error} = await sb.from('series').delete().eq('id', S.seriesId); if(error) throw error; delete S.series[S.seriesId]; S.confirmDel = null; location.hash = 'series'; toast('Series deleted'); });
       break;
     /* barn */
-    case 'addSm': getBarnDraft().showmen.push({id:'e'+rid(), first:'', last:'', birthdate:'', town:''}); S.barnDirty = true; render(true); break;
+    case 'addSm': { getBarnDraft().showmen.push({id:'e'+rid(), first:'', last:'', birthdate:'', town:''}); S.barnDirty = true; render(true); const f = document.querySelectorAll('[data-b$=".first"]'); if(f.length) f[f.length-1].focus(); break; }
     case 'rmSm': { const d = getBarnDraft(), sm = d.showmen[+el.dataset.i]; d.showmen.splice(+el.dataset.i, 1); d.animals.forEach(an => { if(an.showmanId === sm.id) an.showmanId = ''; }); S.barnDirty = true; render(true); break; }
-    case 'addBa': { const d = getBarnDraft(), last = d.animals[d.animals.length-1]; d.animals.push({id:'a'+rid(), species: last ? (last.species||'cattle') : 'cattle', name:'', tag:'', breed:'', sex:'', birthdate:'', weight:'', showmanId: d.showmen.length === 1 ? d.showmen[0].id : ''}); S.barnDirty = true; render(true); break; }
+    case 'addBa': {
+      const d = getBarnDraft(), last = d.animals[d.animals.length-1];
+      const showmanId = S.barnSm && S.barnSm !== 'none' ? S.barnSm : (d.showmen.length === 1 ? d.showmen[0].id : '');
+      d.animals.push({id:'a'+rid(), species: S.barnSp || (last ? (last.species||'cattle') : 'cattle'), name:'', tag:'', breed:'', sex:'', birthdate:'', weight:'', showmanId});
+      S.barnDirty = true; render(true);
+      const inputs = document.querySelectorAll('[data-b$=".name"]'); if(inputs.length) inputs[inputs.length-1].focus();
+      break; }
+    case 'barnSmAnimals': S.barnSm = el.dataset.id; S.barnSp = ''; location.hash = 'barn-animals'; break;
+    case 'barnClear': S.barnSm = ''; S.barnSp = ''; render(true); break;
     case 'rmBa': getBarnDraft().animals.splice(+el.dataset.i, 1); S.barnDirty = true; render(true); break;
     case 'saveBarn': {
       const d = getBarnDraft();
-      for(const sm of d.showmen){ sm.first = (sm.first||'').trim(); sm.last = (sm.last||'').trim(); sm.town = (sm.town||'').trim(); if(!sm.first){ toast('Each showman needs a first name.', true); return; } }
-      for(const an of d.animals){ an.species = an.species || 'cattle'; if(!an.name || !an.breed || !an.sex){ toast('Each animal needs a name, breed and sex.', true); return; } if(!an.showmanId){ toast(`Choose who shows ${an.name}.`, true); return; } }
+      for(const sm of d.showmen){ sm.first = (sm.first||'').trim(); sm.last = (sm.last||'').trim(); sm.town = (sm.town||'').trim(); if(!sm.first){ toast('Each showman needs a first name.', true); if(S.barnTab !== 'showmen') location.hash = 'barn-showmen'; return; } }
+      for(const an of d.animals){ an.species = an.species || 'cattle'; if(!an.name || !an.breed || !an.sex){ toast('Each animal needs a name, breed and sex.', true); S.barnSm = ''; S.barnSp = ''; if(S.barnTab !== 'animals') location.hash = 'barn-animals'; else render(true); return; } if(!an.showmanId || !d.showmen.some(x => x.id === an.showmanId)){ toast(`Choose who shows ${an.name}.`, true); S.barnSm = 'none'; S.barnSp = ''; if(S.barnTab !== 'animals') location.hash = 'barn-animals'; else render(true); return; } }
       const data = {showmen:d.showmen, animals:d.animals};
       enqueue(async () => { const {error} = await sb.from('barns').upsert({owner:S.uid, data, updated_at:new Date().toISOString()}); if(error) throw error; S.barn = data; S.barnDirty = false; S.barnDraft = null; toast('Barn saved'); render(true); });
       break; }
@@ -1291,6 +1328,8 @@ document.addEventListener('click', e => {
 let mgrTimer = null;
 document.addEventListener('input', e => {
   const t = e.target, v = t.type === 'checkbox' ? t.checked : t.value;
+  if(t.id === 'barnSm'){ S.barnSm = t.value; render(true); return; }
+  if(t.id === 'barnSp'){ S.barnSp = t.value; render(true); return; }
   if(t.id === 'userQ'){ S.userQ = t.value; render(true); return; }
   if(t.dataset.roleUser){ const id = t.dataset.roleUser, role = t.value; enqueue(async () => { const {error} = await sb.from('profiles').update({role}).eq('id', id); if(error) throw error; const u = (S.users||[]).find(x => x.id === id); if(u) u.role = role; toast('Role updated'); }); return; }
   if(t.id === 'showSearch'){ S.showQ = t.value; const l = $('#showList'); if(l) l.innerHTML = showListHTML(); return; }
@@ -1343,7 +1382,8 @@ function route(){
   const m = h.match(/^(live|results|enter|office)-([A-Za-z0-9]+)$/), sm = h.match(/^series-([A-Za-z0-9]+)$/);
   if(m){ if(S.showId !== m[2]){ S.editing = null; S.setDraft = {}; S.showSettings = false; S.expanded = new Set(); S.placeClass = null; S.placeDraft = {}; S.mgrHits = []; } S.view = m[1]; S.showId = m[2]; if(S.openSettingsFor === m[2]){ S.showSettings = true; S.openSettingsFor = null; } }
   else if(sm){ if(S.seriesId !== sm[1]){ S.serDraft = null; S.serCat = 'overall'; S.serBreed = ''; } S.view = 'seriesOne'; S.seriesId = sm[1]; }
-  else S.view = ['barn','series','account','users','shows'].includes(h) ? h : 'welcome';
+  else if(/^barn(-showmen|-animals)?$/.test(h)){ S.view = 'barn'; S.barnTab = h === 'barn-animals' ? 'animals' : 'showmen'; }
+  else S.view = ['series','account','users','shows'].includes(h) ? h : 'welcome';
   if(['account','welcome'].includes(S.view) && S.lastHash && !/^(account|welcome)?$/.test(S.lastHash)) S.returnTo = S.lastHash;
   S.lastHash = h;
   if(S.view === 'users') S.users = null;

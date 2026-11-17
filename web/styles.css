@@ -173,3 +173,7 @@ tr.inel td{opacity:.6}
 body.on-welcome #acct{display:none}
 @media (max-width:760px){.landing{grid-template-columns:1fr}.landing .headline{font-size:2rem}.door{order:-1}.pitch .perks{display:none}}
 .landing a,.door a{color:var(--rust);font-weight:600}
+.subtabs{display:flex;gap:4px;border-bottom:2px solid var(--line);margin:4px 0 14px}
+.subtabs a{padding:9px 16px;text-decoration:none;color:var(--muted);font-weight:600;border-bottom:3px solid transparent;margin-bottom:-2px}
+.subtabs a.on{color:var(--ink);border-bottom-color:var(--rust)}
+.subtabs .cnt{display:inline-block;min-width:20px;text-align:center;font-size:.78rem;background:#e9dfcb;color:var(--ink);border-radius:99px;padding:1px 6px;margin-left:4px}
