@@ -164,6 +164,19 @@ drop policy if exists "barns: owner only" on public.barns;
 create policy "barns: owner only" on public.barns for all to authenticated
   using (owner = auth.uid()) with check (owner = auth.uid());
 
+-- ───────────────────────── access for the website ─────────────────────────
+-- Newer Supabase projects don't always let the website's roles (anon = visitors,
+-- authenticated = logged-in users) use new tables automatically, so grant it here.
+-- Row-level security above still decides which rows each person can see or change.
+grant usage on schema public to anon, authenticated;
+grant select on public.shows, public.series, public.entries to anon, authenticated;
+grant insert, update, delete on public.shows, public.series, public.entries to authenticated;
+grant select, update on public.profiles to authenticated;
+grant select, insert, update, delete on public.barns to authenticated;
+grant execute on function public.my_role(), public.is_admin(), public.can_create_shows(),
+  public.is_show_manager(text), public.entries_open(text) to anon, authenticated;
+grant execute on function public.update_show(text, jsonb) to authenticated;
+
 -- ───────────────────────── live updates ─────────────────────────
 do $$
 begin

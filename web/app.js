@@ -545,6 +545,7 @@ function viewWelcome(){
       <p class="muted small" style="text-align:center;margin:10px 0 0">Just watching? <a href="#shows">Follow a show without an account →</a></p>
     </section>
   </div>
+  ${S.loadErr && !S.showsLoaded ? `<div style="margin-top:18px">${loadErrHTML()}</div>` : ''}
   ${soon.length ? `<h2>${liveNow.length ? 'Happening now & coming up' : 'Coming up'}</h2><div class="soon">${soon.map(([id, x]) => { const st = showStatus(x); return `<a class="mini" href="#live-${esc(id)}" style="text-decoration:none;color:inherit">
       <div class="lab">${esc(shortDate(x.date) || 'Date TBA')}${x.location ? ' · ' + esc(x.location) : ''}</div><div class="t">${esc(x.name || 'Untitled show')}</div>
       <span class="chip ${st.k}">${esc(st.label)}</span></a>`; }).join('')}</div>` : ''}`;
@@ -1095,6 +1096,7 @@ function render(force){
   const ac = $('#acct');
   if(S.uid && !S.noDb){ const n = S.myName || 'Account'; ac.className = 'acct'; ac.innerHTML = `<span class="av">${esc(n.trim()[0]||'?').toUpperCase()}</span>${esc(n.split(' ')[0])}`; }
   else { ac.className = 'acct out'; ac.textContent = 'Log in'; }
+  if(S.loadErr && !S.showsLoaded && !['welcome','account','barn'].includes(S.view)){ $('#app').innerHTML = loadErrHTML(); renderRingbar(); return; }
   const V = {welcome:viewWelcome, users:viewUsers, account:viewAccount, shows:viewShows, barn:viewBarn, live:viewLive, results:viewResults, enter:viewEnter, office:viewOffice, series:viewSeriesList, seriesOne:viewSeries}[S.view] || viewShows;
   $('#app').innerHTML = V();
   if(fid && document.getElementById(fid)){ const s = document.getElementById(fid); s.focus(); try{ s.setSelectionRange(pos, pos); }catch(e){} }
@@ -1200,6 +1202,7 @@ document.addEventListener('click', e => {
       if(S.confirmDel !== 'show|'+el.dataset.id){ S.confirmDel = 'show|'+el.dataset.id; const l = $('#showList'); if(l) l.innerHTML = showListHTML(); return; }
       S.confirmDel = null; deleteShow(el.dataset.id);
       break;
+    case 'retryLoad': S.loadTries = 0; loadAll(); break;
     case 'authTab': S.authTab = el.dataset.k; S.authMsg = ''; S.authErr = ''; render(true); break;
     case 'logout': sb.auth.signOut().then(() => { toast('Logged out'); location.hash = 'welcome'; }); break;
     case 'showWhen': S.showWhen = el.dataset.k; render(true); break;
@@ -1425,9 +1428,11 @@ async function loadAll(){
     S.entryRows = new Map(entries.map(r => [r.show_id+'::'+r.doc_id, r]));
     rebuildEntries();
     S.showsLoaded = S.entriesLoaded = S.seriesLoaded = true; S.slow = false;
+    S.loadErr = null; S.loadTries = 0;
   }catch(e){
-    console.error(e); toast('Couldn’t load show data. Retrying…', true);
-    setTimeout(loadAll, 5000);
+    console.error(e);
+    S.loadErr = e; S.loadTries = (S.loadTries || 0) + 1;
+    setTimeout(loadAll, Math.min(30000, 5000 * S.loadTries));
   }finally{ clearTimeout(loadTimer); }
   render();
 }
@@ -1528,6 +1533,18 @@ document.addEventListener('submit', async e => {
   finally{ if(btn) btn.disabled = false; }
 });
 
+function loadErrHTML(){
+  const e = S.loadErr || {}, m = String(e.message || e.error_description || e || ''), code = e.code || '';
+  let why, fix;
+  if(code === '42501' || /permission denied/i.test(m)){ why = 'The database is set up but isn’t letting the website read it.'; fix = 'In Supabase, open SQL Editor, paste the latest <code>supabase/schema.sql</code> from GitHub and click Run. It’s safe to run again.'; }
+  else if(code === 'PGRST205' || code === '42P01' || /could not find the table|does not exist|schema cache/i.test(m)){ why = 'The database tables haven’t been created yet.'; fix = 'In Supabase, open SQL Editor, paste all of <code>supabase/schema.sql</code> from GitHub and click Run.'; }
+  else if(/invalid api key|no api key|jwt|unauthori[sz]ed|401/i.test(m)){ why = 'The website’s Supabase key isn’t being accepted.'; fix = 'Check that <code>web/config.js</code> has the project’s anon or publishable key from Supabase → Project Settings → API Keys.'; }
+  else if(/failed to fetch|network|load failed|err_name|timed? ?out/i.test(m)){ why = 'The website can’t reach the database server.'; fix = 'Check your internet connection. If it keeps happening, open your Supabase dashboard: free projects pause after a week without use and need to be restored.'; }
+  else { why = 'The database returned an error.'; fix = 'Send this message to whoever manages the site.'; }
+  return `<div class="card"><h3>Can’t load show data</h3><p><b>${why}</b></p><p class="muted">${fix}</p>
+    <p class="small muted" style="margin:10px 0 0">Details: ${esc(m || 'unknown error')}${code ? ` (code ${esc(code)})` : ''} · Retrying automatically.</p>
+    <div class="row-actions"><button class="btn" data-act="retryLoad">Try again now</button></div></div>`;
+}
 function setupHTML(){
   return `<div class="card"><h3>Almost ready</h3><p>This site isn’t connected to its database yet.</p>
     <p class="muted">Add your Supabase project URL and anon key to <code>web/config.js</code>, then push. See <code>docs/SETUP.md</code> in the repository.</p></div>`;
