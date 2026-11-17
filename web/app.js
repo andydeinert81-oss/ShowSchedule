@@ -110,7 +110,7 @@ const divisionFor = (age, c) => (c.divisions||[]).find(d => age >= d.min && age 
 
 function toast(msg, err){
   const t = $('#toast'); t.innerHTML = `<div class="toast ${err?'err':''}">${esc(msg)}</div>`;
-  clearTimeout(toast._t); toast._t = setTimeout(()=>{ t.innerHTML=''; }, 2800);
+  clearTimeout(toast._t); toast._t = setTimeout(()=>{ t.innerHTML=''; }, err ? 7000 : 2800);
 }
 let queue = Promise.resolve();
 /* Runs writes one at a time. On failure: explain, reload from the server, and never run the caller's success step. */
@@ -120,7 +120,8 @@ function enqueue(fn){
   return p.catch(e => {
     console.error(e);
     const msg = String((e && (e.message || e.error_description)) || e);
-    if(e && (e.code === '42501' || /row-level security|permission denied/i.test(msg))) toast('You don’t have permission to change that.', true);
+    if(e && (e.code === 'PGRST205' || e.code === '42P01' || /could not find the table|does not exist|schema cache/i.test(msg))) toast('The database needs an update: in Supabase, run the latest supabase/schema.sql in the SQL Editor, then try again.', true);
+    else if(e && (e.code === '42501' || /row-level security|permission denied/i.test(msg))) toast('You don’t have permission to change that.', true);
     else if(/fetch|network|Failed to/i.test(msg)) toast('Couldn’t reach the server. Check your connection and try again.', true);
     else toast('Couldn’t save: ' + msg, true);
     loadAll();
@@ -790,6 +791,9 @@ function viewBoard(){
   const show = S.shows[S.showId]; if(!show) return notFound();
   const posts = postsFor(S.showId), manage = isManager();
   markSeen(S.showId);
+  if(S.postsMissing) return `<div class="card"><h3>The bulletin board isn’t set up yet</h3><p>The database doesn’t have the board’s table yet.</p>
+    <p class="muted">${manage ? 'In Supabase, open <b>SQL Editor → New query</b>, paste the latest <code>supabase/schema.sql</code> from GitHub, click <b>Run</b>, then reload this page.' : 'The show office needs to finish setting it up. Check back soon.'}</p>
+    ${S.postsErr ? `<p class="small muted">Details: ${esc(S.postsErr)}</p>` : ''}<div class="row-actions"><button class="btn" data-act="retryLoad">Check again</button></div></div>`;
   let h = `<div class="who-bar"><h2 style="margin:0">Bulletin board</h2><span class="muted small">Updates from the show office</span></div>`;
   if(manage) h += composerHTML();
   if(!posts.length) return h + `<div class="card empty"><h3>No posts yet</h3><p class="muted">${manage ? 'Post schedule changes, weigh-in times, weather updates and reminders here. Everyone following the show sees them right away.' : 'Check back here for schedule changes, weigh-in times and other news from the show office.'}</p></div>`;
@@ -1510,7 +1514,8 @@ async function loadAll(){
   try{
     const [shows, series, entries, posts] = await Promise.all([
       fetchAll('shows', 'id,data,managers'), fetchAll('series', 'id,name,year,rules,created_by'), fetchAll('entries', 'show_id,doc_id,owner,exhibitors'),
-      fetchAll('posts', 'id,show_id,author,author_name,kind,title,body,pinned,created_at,updated_at').catch(e => { console.warn('posts unavailable', e); return null; })]);
+      fetchAll('posts', 'id,show_id,author,author_name,kind,title,body,pinned,created_at,updated_at').catch(e => { console.warn('posts unavailable', e); S.postsErr = String(e && (e.message || e)); return null; })]);
+    S.postsMissing = !posts;
     if(posts) S.posts = Object.fromEntries(posts.map(p => [p.id, p]));
     S.shows = Object.fromEntries(shows.map(r => [r.id, showFromRow(r)]));
     S.series = Object.fromEntries(series.map(r => [r.id, seriesFromRow(r)]));

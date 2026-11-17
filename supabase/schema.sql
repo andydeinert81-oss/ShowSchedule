@@ -214,3 +214,6 @@ begin
   begin alter publication supabase_realtime add table public.series;  exception when duplicate_object then null; end;
   begin alter publication supabase_realtime add table public.posts;   exception when duplicate_object then null; end;
 end $$;
+
+-- Tell Supabase's API to pick up new or changed tables right away.
+notify pgrst, 'reload schema';
