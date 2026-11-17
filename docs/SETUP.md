@@ -84,4 +84,4 @@ Any account can be added as a co-manager of a specific show from that show's set
 
 Ask Claude for the change in this project. It edits the code, tests it, and pushes to `main`. GitHub Actions republishes the site automatically.
 
-If you ever change the database structure, run the updated `supabase/schema.sql` again. It's safe to re-run.
+Once the `SUPABASE_ACCESS_TOKEN` secret is set (step 6), changes to `supabase/schema.sql` are applied to the database automatically by the **Apply database schema** workflow, and changes to the function are deployed by **Deploy Supabase functions**. Without the secret, re-run `supabase/schema.sql` in the SQL Editor yourself. It's safe to re-run.

@@ -205,6 +205,11 @@ grant select, insert, update, delete on public.barns to authenticated;
 grant execute on function public.my_role(), public.is_admin(), public.can_create_shows(),
   public.is_show_manager(text), public.entries_open(text) to anon, authenticated;
 grant execute on function public.update_show(text, jsonb) to authenticated;
+-- The server-side role (used by the admin-users Edge Function with the project's secret key).
+-- It skips row-level security but still needs table access granted.
+grant usage on schema public to service_role;
+grant all on all tables in schema public to service_role;
+grant execute on all functions in schema public to service_role;
 
 -- ───────────────────────── live updates ─────────────────────────
 do $$
