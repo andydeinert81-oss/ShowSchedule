@@ -558,13 +558,14 @@ function viewWelcome(){
 async function adminCall(body){
   let res;
   try{ res = await sb.functions.invoke('admin-users', {body}); }
-  catch(e){ const err = new Error(String(e && e.message || e)); err.missing = true; throw err; }
+  catch(e){ const err = new Error(String(e && e.message || e)); err.missing = true; err.kind = 'unreachable'; throw err; }
   const {data, error} = res;
   if(error){
     let msg = error.message || 'Request failed', status = error.context && error.context.status;
     try{ const j = await error.context.json(); if(j) msg = j.error || j.message || msg; }catch(_){}
     const err = new Error(msg); err.status = status;
-    err.missing = status === 404 || ['FunctionsFetchError','FunctionsRelayError'].includes(error.name) || /not found|failed to send/i.test(msg);
+    err.kind = status === 404 ? 'notfound' : (['FunctionsFetchError','FunctionsRelayError'].includes(error.name) || /failed to send/i.test(msg)) ? 'unreachable' : (status === 401 && /jwt/i.test(msg)) ? 'jwt' : 'other';
+    err.missing = err.kind === 'notfound' || err.kind === 'unreachable';
     throw err;
   }
   if(data && data.error) throw new Error(data.error);
@@ -584,6 +585,7 @@ function loadUsers(){
     if(prof.error) toast(prof.error.message, true);
     S.users = prof.data || [];
     S.fnReady = auth.ok; S.fnMissing = !auth.ok && !!auth.err.missing; S.fnErr = auth.ok ? '' : auth.err.message;
+    S.fnKind = auth.ok ? '' : (auth.err.kind || 'other'); S.fnStatus = auth.ok ? '' : (auth.err.status || '');
     S.userAuth = auth.ok ? Object.fromEntries(auth.users.map(u => [u.id, u])) : {};
     render();
   });
@@ -618,9 +620,17 @@ function viewUsers(){
   const status = u => { const a = A[u.id]; if(!a) return ''; if(a.invited) return '<span class="pill">Invite sent</span>'; if(!a.confirmed) return '<span class="pill">Email not confirmed</span>'; return a.last_sign_in_at ? `<span class="muted small">Last in ${esc(ago(a.last_sign_in_at))}</span>` : '<span class="pill">Never logged in</span>'; };
   let h = `<div class="who-bar"><h2 style="margin:0">Users &amp; roles</h2><span style="display:flex;gap:10px;align-items:center"><span class="muted small">${S.users.length} accounts</span>${S.fnReady && !S.addUser ? `<button class="btn pri" data-act="addUserOpen">+ Add user</button>` : ''}</span></div>
     <p class="muted" style="margin-top:0">Exhibitors keep a barn and enter shows. Show managers can also create and run shows and series. Admins can do everything, including this page.</p>`;
-  if(!S.fnReady) h += `<div class="banner ${S.fnMissing ? 'info' : 'warn'}">${S.fnMissing
-      ? `<b>One setup step turns on adding users and resetting passwords here.</b> Deploy the <code>admin-users</code> function in Supabase (see <i>docs/SETUP.md, step 6</i> in GitHub). Changing roles already works.`
-      : `<b>User tools aren’t available right now.</b> ${esc(S.fnErr || '')}`} <button class="btn sm" data-act="reloadUsers" style="margin-left:6px">Check again</button></div>`;
+  if(!S.fnReady){
+    const why = {
+      notfound: `Supabase says there’s <b>no function named <code>admin-users</code></b> in this project. Check the name in <b>Edge Functions</b>: it must be exactly <code>admin-users</code> (with a dash, all lowercase). If it isn’t there, deploy it (GitHub: <i>docs/SETUP.md, step 6</i>).`,
+      unreachable: `The site <b>couldn’t reach the <code>admin-users</code> function</b>. Either it isn’t deployed yet, or it’s deployed but crashing when it starts. In Supabase open <b>Edge Functions → admin-users → Logs</b> to see any startup error, and make sure the code is the full file from <code>supabase/functions/admin-users/index.ts</code>.`,
+      jwt: `The function is deployed, but Supabase is <b>blocking the request before it runs</b>. In <b>Edge Functions → admin-users → Details/Settings</b>, turn off <b>“Verify JWT with legacy secret”</b> (or “Enforce JWT verification”) and save.`,
+      other: `The function answered with an error.`
+    }[S.fnKind || 'other'];
+    h += `<div class="banner ${S.fnKind === 'other' || S.fnKind === 'jwt' ? 'warn' : 'info'}"><b>Adding users and resetting passwords isn’t turned on yet.</b> Changing roles already works.<br>${why}
+      <div class="small muted" style="margin-top:6px">Details: ${esc(S.fnErr || 'no response')}${S.fnStatus ? ` (HTTP ${esc(S.fnStatus)})` : ''}</div>
+      <div style="margin-top:8px"><button class="btn sm" data-act="reloadUsers">Check again</button></div></div>`;
+  }
   h += addUserHTML();
   h += `<div class="card"><input class="in" id="userQ" placeholder="Search by name${S.fnReady ? ' or email' : ''}" value="${esc(S.userQ||'')}" style="margin-bottom:8px">
     <div style="overflow-x:auto"><table><thead><tr><th>Name</th><th>Status</th><th>Role</th>${S.fnReady ? '<th></th>' : ''}</tr></thead><tbody>${rows.map(u => {
