@@ -56,6 +56,13 @@ The **Users** page can create accounts, reset passwords and remove accounts. Doi
 4. Open the function's **Details** (or **Settings**) and turn **off** "Verify JWT with legacy secret" (it may be labeled "Enforce JWT verification"), then save. The function checks the caller's login and admin role itself, and Supabase's newer keys don't work with the legacy check.
 5. Reload the site's **Users** page. An **+ Add user** button appears.
 
+**Or let GitHub deploy it for you** (and redeploy it whenever the function changes):
+1. In Supabase, click your avatar → **Account preferences → Access Tokens → Generate new token**. Name it `GitHub deploy` and copy it.
+2. In this GitHub repository: **Settings → Secrets and variables → Actions → New repository secret**. Name: `SUPABASE_ACCESS_TOKEN`, value: the token. Save.
+3. Go to **Actions → Deploy Supabase functions → Run workflow**. When it shows a green check, the function is live with JWT verification already off.
+
+The token can manage your whole Supabase account, so keep it only in GitHub Secrets (never in the code) and delete it in Supabase if you stop using this.
+
 If you prefer the command line: `supabase functions deploy admin-users --no-verify-jwt`.
 
 When adding someone you can either:

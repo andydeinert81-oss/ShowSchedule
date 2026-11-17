@@ -1,0 +1,30 @@
+# Deploys the Supabase Edge Functions in supabase/functions/ to the ShowSchedule project.
+# Needs a repository secret named SUPABASE_ACCESS_TOKEN (Supabase → Account → Access Tokens).
+# Without that secret this workflow does nothing (deploy the function from the Supabase dashboard instead).
+name: Deploy Supabase functions
+
+on:
+  push:
+    branches: [main]
+    paths: ['supabase/functions/**', '.github/workflows/supabase-functions.yml']
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      PROJECT_REF: rrytuhdatmnauakqrjla
+    steps:
+      - name: Skip if no access token is set
+        if: env.SUPABASE_ACCESS_TOKEN == ''
+        run: echo "::notice::Add the SUPABASE_ACCESS_TOKEN repository secret to deploy functions automatically."
+      - uses: actions/checkout@v4
+        if: env.SUPABASE_ACCESS_TOKEN != ''
+      - uses: supabase/setup-cli@v1
+        if: env.SUPABASE_ACCESS_TOKEN != ''
+        with:
+          version: latest
+      - name: Deploy admin-users
+        if: env.SUPABASE_ACCESS_TOKEN != ''
+        run: supabase functions deploy admin-users --project-ref "$PROJECT_REF" --no-verify-jwt --use-api
