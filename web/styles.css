@@ -199,3 +199,11 @@ body.on-welcome #acct{display:none}
 nav a .badge{margin-left:4px;font-size:.7rem;padding:3px 6px}
 .notice-row.k-urgent{border-left-color:#b4322a}.notice-row.k-sched{border-left-color:var(--gold)}.notice-row.k-weather{border-left-color:var(--blue)}
 .notice-row.k-remind{border-left-color:var(--green)}.notice-row.k-results{border-left-color:#5b3a8c}
+
+/* user management */
+.mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;letter-spacing:.03em}
+.choice{display:flex;gap:18px;flex-wrap:wrap;margin:4px 0}
+.created{border-left:5px solid var(--green)}
+.creds{display:grid;grid-template-columns:1fr 1fr;gap:10px;background:#fff;border:1px solid var(--line);border-radius:10px;padding:12px;margin:8px 0}
+.creds span{display:block}.creds b{font-size:1.05rem;overflow-wrap:anywhere}
+@media (max-width:520px){.creds{grid-template-columns:1fr}}

@@ -46,6 +46,22 @@ Supabase's built-in email sender is limited to a few emails per hour, which is f
 2. Confirm your email if asked, then log in.
 3. In Supabase **SQL Editor**, run the one-time import file Claude gave you (`import-claude-data.sql`). It is **not** in this repository because it contains your family's data. It moves your shows, series, entries and barn to your new login.
 
+## 6. Let admins add users from the site (optional)
+
+The **Users** page can create accounts, reset passwords and remove accounts. Doing that needs Supabase's private admin key, which must never be in the website, so it runs as a small **Edge Function** on Supabase's servers. The function only does anything when the request comes from a logged-in admin.
+
+1. In Supabase, open **Edge Functions → Deploy a new function → Via Editor**.
+2. Name it exactly **`admin-users`**.
+3. Replace the sample code with everything in [`supabase/functions/admin-users/index.ts`](../supabase/functions/admin-users/index.ts) (use **Copy raw file** on GitHub), then click **Deploy**.
+4. Open the function's **Details** (or **Settings**) and turn **off** "Verify JWT with legacy secret" (it may be labeled "Enforce JWT verification"), then save. The function checks the caller's login and admin role itself, and Supabase's newer keys don't work with the legacy check.
+5. Reload the site's **Users** page. An **+ Add user** button appears.
+
+If you prefer the command line: `supabase functions deploy admin-users --no-verify-jwt`.
+
+When adding someone you can either:
+- **Give them a temporary password**: the account works right away. Share the login details (there's a Copy button), and they can change the password under **Account → Change password**.
+- **Email them an invite link**: Supabase sends the email. Its built-in sender only allows a few emails an hour, so for many families use temporary passwords or set up an email service (step 4).
+
 ## Roles
 
 | Role | Can |

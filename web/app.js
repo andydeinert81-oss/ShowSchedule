@@ -523,6 +523,8 @@ function viewAccount(){
     <p class="muted small" style="margin:0 0 12px">${esc(ROLE_TEXT[S.role] || ROLE_TEXT.exhibitor)}${managed.length ? ` · Manager of ${managed.length} show${managed.length===1?'':'s'}` : ''}</p>
     <form data-form="name" style="display:flex;gap:8px;align-items:end;flex-wrap:wrap"><div style="flex:1;min-width:200px"><label>Display name</label><input class="in" name="name" value="${esc(S.myName)}" required></div><button class="btn" type="submit">Save name</button></form>
     <div class="row-actions"><a class="btn" href="#barn" style="text-decoration:none">My barn</a>${S.isOwner ? `<a class="btn" href="#users" style="text-decoration:none">Users &amp; roles</a>` : ''}<span style="flex:1"></span><button class="btn danger" data-act="logout">Log out</button></div></div>
+    <div class="card"><h3>Change password</h3>
+      <form data-form="chpw" style="display:flex;gap:8px;align-items:end;flex-wrap:wrap"><div style="flex:1;min-width:200px"><label>New password (8+ characters)</label><input class="in" name="password" type="password" minlength="8" autocomplete="new-password" required></div><button class="btn" type="submit">Change password</button></form></div>
     ${S.role === 'exhibitor' ? `<p class="muted small">Running a show? Ask the site admin to make your account a show manager.</p>` : ''}`;
 }
 function viewWelcome(){
@@ -552,19 +554,88 @@ function viewWelcome(){
       <div class="lab">${esc(shortDate(x.date) || 'Date TBA')}${x.location ? ' · ' + esc(x.location) : ''}</div><div class="t">${esc(x.name || 'Untitled show')}</div>
       <span class="chip ${st.k}">${esc(st.label)}</span></a>`; }).join('')}</div>` : ''}`;
 }
+/* ----- admin user management (uses the admin-users Edge Function) ----- */
+async function adminCall(body){
+  let res;
+  try{ res = await sb.functions.invoke('admin-users', {body}); }
+  catch(e){ const err = new Error(String(e && e.message || e)); err.missing = true; throw err; }
+  const {data, error} = res;
+  if(error){
+    let msg = error.message || 'Request failed', status = error.context && error.context.status;
+    try{ const j = await error.context.json(); if(j) msg = j.error || j.message || msg; }catch(_){}
+    const err = new Error(msg); err.status = status;
+    err.missing = status === 404 || ['FunctionsFetchError','FunctionsRelayError'].includes(error.name) || /not found|failed to send/i.test(msg);
+    throw err;
+  }
+  if(data && data.error) throw new Error(data.error);
+  return data;
+}
+function genPw(){
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789', a = new Uint32Array(10);
+  crypto.getRandomValues(a); return [...a].map(n => chars[n % chars.length]).join('');
+}
+function loadUsers(){
+  if(S.usersLoading) return; S.usersLoading = true;
+  Promise.all([
+    sb.from('profiles').select('id,display_name,role,created_at').order('display_name'),
+    adminCall({action:'list'}).then(d => ({ok:true, users:d.users || []}), e => ({ok:false, err:e}))
+  ]).then(([prof, auth]) => {
+    S.usersLoading = false;
+    if(prof.error) toast(prof.error.message, true);
+    S.users = prof.data || [];
+    S.fnReady = auth.ok; S.fnMissing = !auth.ok && !!auth.err.missing; S.fnErr = auth.ok ? '' : auth.err.message;
+    S.userAuth = auth.ok ? Object.fromEntries(auth.users.map(u => [u.id, u])) : {};
+    render();
+  });
+}
+function addUserHTML(){
+  const d = S.addUser;
+  if(!d) return '';
+  if(d.done) return `<div class="card created"><h3>✓ Account created for ${esc(d.done.name)}</h3>
+    ${d.done.mode === 'invite'
+      ? `<p>We emailed an invite to <b>${esc(d.done.email)}</b>. They tap the link in it to set their password.</p>`
+      : `<p>Give them these to log in. They can change the password under <b>Account → Change password</b>.</p>
+         <div class="creds"><div><span class="muted small">Email</span><b>${esc(d.done.email)}</b></div><div><span class="muted small">Temporary password</span><b class="mono">${esc(d.done.password)}</b></div></div>
+         <div class="row-actions"><button class="btn" data-act="copyCreds">Copy login details</button></div>`}
+    <div class="row-actions"><button class="btn pri" data-act="addUserAgain">Add another</button><button class="btn ghost" data-act="addUserClose">Done</button></div></div>`;
+  return `<div class="card"><h3>Add a user</h3>
+    <div class="grid g3"><div><label>Name</label><input class="in" data-au="name" value="${esc(d.name)}" placeholder="Parent or manager name" autocomplete="off"></div>
+      <div><label>Email</label><input class="in" type="email" data-au="email" value="${esc(d.email)}" autocomplete="off"></div>
+      <div><label>Role</label><select class="in" data-au="role">${['exhibitor','manager','admin'].map(r => `<option value="${r}"${d.role===r?' selected':''}>${r[0].toUpperCase()+r.slice(1)}</option>`).join('')}</select></div></div>
+    <label style="margin-top:12px">How will they log in?</label>
+    <div class="choice"><label class="check"><input type="radio" name="aumode" data-au="mode" value="password"${d.mode!=='invite'?' checked':''}> I’ll give them a temporary password</label>
+      <label class="check"><input type="radio" name="aumode" data-au="mode" value="invite"${d.mode==='invite'?' checked':''}> Email them an invite link</label></div>
+    ${d.mode === 'invite'
+      ? `<p class="muted small">Supabase sends the invite. Its built-in email only allows a few messages an hour, so for many families use temporary passwords or set up an email service in Supabase.</p>`
+      : `<div style="display:flex;gap:8px;align-items:end;flex-wrap:wrap;margin-top:6px"><div style="flex:1;min-width:200px"><label>Temporary password</label><input class="in mono" data-au="password" value="${esc(d.password)}" minlength="8"></div><button class="btn sm ghost" data-act="newTempPw">New suggestion</button></div>`}
+    <div class="row-actions"><span style="flex:1"></span><button class="btn ghost" data-act="addUserClose">Cancel</button><button class="btn pri" data-act="createUser">Create account</button></div></div>`;
+}
 function viewUsers(){
   if(!S.isOwner) return `<div class="card empty"><h3>Admins only</h3></div>`;
-  if(!S.users){
-    if(!S.usersLoading){ S.usersLoading = true; sb.from('profiles').select('id,display_name,role,created_at').order('display_name').then(({data, error}) => { S.usersLoading = false; S.users = error ? [] : data; if(error) toast(error.message, true); render(); }); }
-    return loading();
-  }
-  const q = (S.userQ||'').toLowerCase();
-  const rows = S.users.filter(u => !q || (u.display_name||'').toLowerCase().includes(q));
-  return `<div class="who-bar"><h2 style="margin:0">Users &amp; roles</h2><span class="muted small">${S.users.length} accounts</span></div>
-    <p class="muted" style="margin-top:0">Show managers can create shows and series. Admins can do everything, including this page.</p>
-    <div class="card"><input class="in" id="userQ" placeholder="Search by name" value="${esc(S.userQ||'')}" style="margin-bottom:8px">
-    <table><thead><tr><th>Name</th><th>Joined</th><th>Role</th></tr></thead><tbody>${rows.map(u => `<tr><td><b>${esc(u.display_name||'—')}</b>${u.id===S.uid?' <span class="pill">You</span>':''}</td><td class="small muted">${esc(new Date(u.created_at).toLocaleDateString())}</td>
-      <td><select class="in" style="width:auto" data-role-user="${esc(u.id)}"${u.id===S.uid?' disabled':''}>${['exhibitor','manager','admin'].map(r => `<option value="${r}"${u.role===r?' selected':''}>${r[0].toUpperCase()+r.slice(1)}</option>`).join('')}</select></td></tr>`).join('')}</tbody></table></div>`;
+  if(!S.users){ loadUsers(); return loading(); }
+  const q = (S.userQ||'').toLowerCase(), A = S.userAuth || {};
+  const rows = S.users.filter(u => !q || (u.display_name||'').toLowerCase().includes(q) || ((A[u.id]||{}).email||'').toLowerCase().includes(q));
+  const status = u => { const a = A[u.id]; if(!a) return ''; if(a.invited) return '<span class="pill">Invite sent</span>'; if(!a.confirmed) return '<span class="pill">Email not confirmed</span>'; return a.last_sign_in_at ? `<span class="muted small">Last in ${esc(ago(a.last_sign_in_at))}</span>` : '<span class="pill">Never logged in</span>'; };
+  let h = `<div class="who-bar"><h2 style="margin:0">Users &amp; roles</h2><span style="display:flex;gap:10px;align-items:center"><span class="muted small">${S.users.length} accounts</span>${S.fnReady && !S.addUser ? `<button class="btn pri" data-act="addUserOpen">+ Add user</button>` : ''}</span></div>
+    <p class="muted" style="margin-top:0">Exhibitors keep a barn and enter shows. Show managers can also create and run shows and series. Admins can do everything, including this page.</p>`;
+  if(!S.fnReady) h += `<div class="banner ${S.fnMissing ? 'info' : 'warn'}">${S.fnMissing
+      ? `<b>One setup step turns on adding users and resetting passwords here.</b> Deploy the <code>admin-users</code> function in Supabase (see <i>docs/SETUP.md, step 6</i> in GitHub). Changing roles already works.`
+      : `<b>User tools aren’t available right now.</b> ${esc(S.fnErr || '')}`} <button class="btn sm" data-act="reloadUsers" style="margin-left:6px">Check again</button></div>`;
+  h += addUserHTML();
+  h += `<div class="card"><input class="in" id="userQ" placeholder="Search by name${S.fnReady ? ' or email' : ''}" value="${esc(S.userQ||'')}" style="margin-bottom:8px">
+    <div style="overflow-x:auto"><table><thead><tr><th>Name</th><th>Status</th><th>Role</th>${S.fnReady ? '<th></th>' : ''}</tr></thead><tbody>${rows.map(u => {
+      const a = A[u.id] || {}, me = u.id === S.uid, pw = S.pwReset && S.pwReset.id === u.id ? S.pwReset : null;
+      return `<tr><td><b>${esc(u.display_name||'—')}</b>${me ? ' <span class="pill">You</span>' : ''}${a.email ? `<br><span class="muted small">${esc(a.email)}</span>` : ''}</td>
+        <td>${status(u)}</td>
+        <td><select class="in" style="width:auto" data-role-user="${esc(u.id)}"${me?' disabled':''}>${['exhibitor','manager','admin'].map(r => `<option value="${r}"${u.role===r?' selected':''}>${r[0].toUpperCase()+r.slice(1)}</option>`).join('')}</select></td>
+        ${S.fnReady ? `<td style="white-space:nowrap">${me ? '' : `<button class="btn sm ghost" data-act="pwResetOpen" data-id="${esc(u.id)}">Reset password</button>
+          <button class="btn sm danger" data-act="delUser" data-id="${esc(u.id)}">${S.confirmDel === 'user|'+u.id ? 'Tap again to remove' : 'Remove'}</button>`}</td>` : ''}</tr>
+        ${pw ? `<tr><td colspan="4"><div class="exh" style="margin:0">${pw.done
+          ? `<b>New password for ${esc(u.display_name)}:</b> <span class="mono">${esc(pw.password)}</span> <button class="btn sm" data-act="copyPw">Copy</button> <button class="btn sm ghost" data-act="pwResetClose">Done</button>`
+          : `<div style="display:flex;gap:8px;align-items:end;flex-wrap:wrap"><div style="flex:1;min-width:200px"><label>New temporary password for ${esc(u.display_name)}</label><input class="in mono" data-pw="password" value="${esc(pw.password)}" minlength="8"></div>
+             <button class="btn ghost" data-act="pwResetClose">Cancel</button><button class="btn pri" data-act="pwResetSave">Set password</button></div>`}</div></td></tr>` : ''}`;
+    }).join('')}</tbody></table></div></div>`;
+  return h;
 }
 
 /* ================= view: barn ================= */
@@ -1293,6 +1364,32 @@ document.addEventListener('click', e => {
       const id = el.dataset.id; if(S.confirmDel !== 'post|'+id){ S.confirmDel = 'post|'+id; render(true); return; }
       S.confirmDel = null;
       enqueue(async () => { const {error} = await sb.from('posts').delete().eq('id', id); if(error) throw error; delete S.posts[id]; toast('Post deleted'); render(true); }); break; }
+    case 'reloadUsers': S.users = null; render(true); break;
+    case 'addUserOpen': S.addUser = {name:'', email:'', role:'exhibitor', mode:'password', password:genPw()}; render(true); const f1 = document.querySelector('[data-au=name]'); if(f1) f1.focus(); break;
+    case 'addUserAgain': S.addUser = {name:'', email:'', role:'exhibitor', mode:S.addUser && S.addUser.done ? S.addUser.done.mode : 'password', password:genPw()}; render(true); break;
+    case 'addUserClose': S.addUser = null; render(true); break;
+    case 'newTempPw': S.addUser.password = genPw(); render(true); break;
+    case 'createUser': {
+      const d = S.addUser, name = (d.name||'').trim(), email = (d.email||'').trim();
+      if(!name || !/^\S+@\S+\.\S+$/.test(email)){ toast('Enter a name and a valid email address.', true); return; }
+      if(d.mode !== 'invite' && (d.password||'').length < 8){ toast('The temporary password needs at least 8 characters.', true); return; }
+      el.disabled = true;
+      adminCall({action:'create', name, email, role:d.role, mode:d.mode, password:d.password, redirectTo:siteUrl()})
+        .then(r => { S.addUser = {done:{name, email:r.user.email, mode:d.mode, password:d.password}}; S.users = null; loadUsers(); toast('Account created'); })
+        .catch(e => { el.disabled = false; toast(/already been registered|already registered|exists/i.test(e.message) ? 'That email already has an account.' : e.message, true); });
+      break; }
+    case 'copyCreds': { const d = S.addUser && S.addUser.done; if(!d) return;
+      navigator.clipboard.writeText(`ShowSchedule login\n${siteUrl()}\nEmail: ${d.email}\nTemporary password: ${d.password}\n(Change it under Account → Change password.)`).then(() => toast('Copied'), () => toast('Couldn’t copy. Select the text instead.', true)); break; }
+    case 'pwResetOpen': S.pwReset = {id:el.dataset.id, password:genPw()}; render(true); break;
+    case 'pwResetClose': S.pwReset = null; render(true); break;
+    case 'pwResetSave': { const r = S.pwReset; if(!r || (r.password||'').length < 8){ toast('The new password needs at least 8 characters.', true); return; }
+      el.disabled = true;
+      adminCall({action:'setPassword', id:r.id, password:r.password}).then(() => { r.done = true; toast('Password updated'); render(true); }, e => { el.disabled = false; toast(e.message, true); }); break; }
+    case 'copyPw': navigator.clipboard.writeText(S.pwReset.password).then(() => toast('Copied'), () => toast('Couldn’t copy', true)); break;
+    case 'delUser': { const id = el.dataset.id;
+      if(S.confirmDel !== 'user|'+id){ S.confirmDel = 'user|'+id; render(true); return; }
+      S.confirmDel = null;
+      adminCall({action:'delete', id}).then(() => { S.users = (S.users||[]).filter(u => u.id !== id); toast('Account removed'); render(true); }, e => toast(e.message, true)); break; }
     case 'authTab': S.authTab = el.dataset.k; S.authMsg = ''; S.authErr = ''; render(true); break;
     case 'logout': sb.auth.signOut().then(() => { toast('Logged out'); location.hash = 'welcome'; }); break;
     case 'showWhen': S.showWhen = el.dataset.k; render(true); break;
@@ -1425,6 +1522,8 @@ document.addEventListener('input', e => {
   if(t.id === 'barnSp'){ S.barnSp = t.value; render(true); return; }
   if(t.dataset.post){ const d = S.postDraft || (S.postDraft = {title:'', kind:'general', body:'', pinned:false}); d[t.dataset.post] = t.type === 'checkbox' ? t.checked : t.value; return; }
   if(t.id === 'userQ'){ S.userQ = t.value; render(true); return; }
+  if(t.dataset.au){ if(t.type === 'radio'){ if(t.checked){ S.addUser.mode = t.value; render(true); } } else S.addUser[t.dataset.au] = t.value; return; }
+  if(t.dataset.pw){ S.pwReset[t.dataset.pw] = t.value; return; }
   if(t.dataset.roleUser){ const id = t.dataset.roleUser, role = t.value; enqueue(async () => { const {error} = await sb.from('profiles').update({role}).eq('id', id); if(error) throw error; const u = (S.users||[]).find(x => x.id === id); if(u) u.role = role; toast('Role updated'); }); return; }
   if(t.id === 'showSearch'){ S.showQ = t.value; const l = $('#showList'); if(l) l.innerHTML = showListHTML(); return; }
   if(t.id === 'showSeries'){ S.showSer = t.value; const l = $('#showList'); if(l) l.innerHTML = showListHTML(); return; }
@@ -1480,7 +1579,7 @@ function route(){
   else S.view = ['series','account','users','shows'].includes(h) ? h : 'welcome';
   if(['account','welcome'].includes(S.view) && S.lastHash && !/^(account|welcome)?$/.test(S.lastHash)) S.returnTo = S.lastHash;
   S.lastHash = h;
-  if(S.view === 'users') S.users = null;
+  if(S.view === 'users'){ S.users = null; S.addUser = null; S.pwReset = null; }
   S.confirmDel = null; S.confirmShowDel = false;
   render(true); window.scrollTo(0,0);
 }
@@ -1614,6 +1713,11 @@ document.addEventListener('submit', async e => {
         const {error} = await sb.auth.resetPasswordForEmail(v.email.trim(), {redirectTo: siteUrl()});
         if(error) throw error;
         S.authMsg = 'If that email has an account, a reset link is on its way.'; S.authTab = 'login'; render(true); break; }
+      case 'chpw': {
+        if((v.password||'').length < 8) throw new Error('Use at least 8 characters for your password.');
+        const {error} = await sb.auth.updateUser({password:v.password});
+        if(error) throw error;
+        f.reset(); toast('Password changed'); break; }
       case 'newpw': {
         if((v.password||'').length < 8) throw new Error('Use at least 8 characters for your password.');
         const {error} = await sb.auth.updateUser({password:v.password});
