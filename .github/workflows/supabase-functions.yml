@@ -21,10 +21,11 @@ jobs:
         run: echo "::notice::Add the SUPABASE_ACCESS_TOKEN repository secret to deploy functions automatically."
       - uses: actions/checkout@v4
         if: env.SUPABASE_ACCESS_TOKEN != ''
-      - uses: supabase/setup-cli@v1
+      - uses: actions/setup-node@v4
         if: env.SUPABASE_ACCESS_TOKEN != ''
         with:
-          version: latest
+          node-version: 22
       - name: Deploy admin-users
         if: env.SUPABASE_ACCESS_TOKEN != ''
-        run: supabase functions deploy admin-users --project-ref "$PROJECT_REF" --no-verify-jwt --use-api
+        # The Supabase CLI from npm (avoids the GitHub API lookup that can hit rate limits).
+        run: npx -y supabase@latest functions deploy admin-users --project-ref "$PROJECT_REF" --no-verify-jwt --use-api
