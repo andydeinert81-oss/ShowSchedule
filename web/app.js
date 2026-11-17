@@ -695,11 +695,25 @@ function barnShowmenHTML(d){
   });
   return h + `</div>`;
 }
+function barnShownAnimals(d){
+  const fSm = S.barnSm || '', fSp = S.barnSp || '';
+  return d.animals.map((an, i) => ({an, i})).filter(({an}) =>
+    (!fSm || (fSm === 'none' ? !d.showmen.some(x => x.id === an.showmanId) : an.showmanId === fSm)) && (!fSp || (an.species||'cattle') === fSp));
+}
+function saveBarnNow(msg, onOk){
+  const d = getBarnDraft(), data = {showmen:d.showmen, animals:d.animals};
+  return enqueue(async () => {
+    const {error} = await sb.from('barns').upsert({owner:S.uid, data, updated_at:new Date().toISOString()});
+    if(error) throw error;
+    S.barn = clone(data); S.barnDraft = null; S.barnDirty = false;
+    if(onOk) onOk();
+    toast(msg); render(true);
+  });
+}
 function barnAnimalsHTML(d){
   if(!d.showmen.length) return `<div class="card empty"><h3>Add a showman first</h3><p class="muted">Every animal needs someone to show it.</p><a class="btn pri" href="#barn-showmen" style="text-decoration:none">Go to Showmen</a></div>`;
   const fSm = S.barnSm || '', fSp = S.barnSp || '';
-  const shown = d.animals.map((an, i) => ({an, i})).filter(({an}) =>
-    (!fSm || (fSm === 'none' ? !d.showmen.some(x => x.id === an.showmanId) : an.showmanId === fSm)) && (!fSp || (an.species||'cattle') === fSp));
+  const shown = barnShownAnimals(d);
   const unassigned = d.animals.filter(a => !d.showmen.some(x => x.id === a.showmanId)).length;
   let h = `<div class="card"><div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><h3 style="margin:0">Animals</h3><button class="btn sm pri" data-act="addBa">+ Add animal</button></div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin:12px 0 4px">
@@ -707,13 +721,23 @@ function barnAnimalsHTML(d){
       <select class="in" id="barnSp" style="width:auto"><option value="">All species</option>${SP_ORDER.map(sp => `<option value="${sp}"${fSp===sp?' selected':''}>${esc(SPECIES[sp].label)}</option>`).join('')}</select>
       ${fSm || fSp ? `<button class="btn sm ghost" data-act="barnClear">Show all</button>` : ''}
     </div>`;
+  if(S.barnUndo) h += `<div class="banner info" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:10px 0"><span style="flex:1">Removed ${S.barnUndo.count} animal${S.barnUndo.count===1?'':'s'} from your barn.</span><button class="btn sm" data-act="barnUndo">Undo</button><button class="btn sm ghost" data-act="barnUndoClose">OK</button></div>`;
+  if(shown.length){
+    const sel = S.barnSel || (S.barnSel = new Set());
+    const nSel = shown.filter(({an}) => sel.has(an.id)).length, all = nSel === shown.length;
+    const filtered = shown.length !== d.animals.length;
+    h += `<div class="bulkbar"><label class="check"><input type="checkbox" data-act="barnSelAll"${all?' checked':''}> ${nSel ? `${nSel} selected` : 'Select all'}</label><span style="flex:1"></span>
+      ${nSel ? `<button class="btn sm danger" data-act="barnBulkDel" data-mode="sel">${S.confirmDel==='barn|sel' ? `Tap again to remove ${nSel}` : `Remove selected (${nSel})`}</button>`
+             : `<button class="btn sm danger" data-act="barnBulkDel" data-mode="shown">${S.confirmDel==='barn|shown' ? `Tap again to remove ${shown.length}` : (filtered ? `Clear these ${shown.length}` : `Clear all ${shown.length} animals`)}</button>`}</div>
+      ${S.confirmDel && S.confirmDel.startsWith('barn|') ? `<p class="muted small" style="margin:4px 0 0">This saves right away. Animals already entered in a show stay entered there.</p>` : ''}`;
+  }
   if(!d.animals.length) h += `<p class="muted">Add each animal and who shows it. Market weights can be updated for each show when you enter.</p>`;
   else if(!shown.length) h += `<p class="muted">No animals match these filters.</p>`;
   else h += `<div class="muted small">${shown.length === d.animals.length ? `${d.animals.length} animal${d.animals.length===1?'':'s'}` : `Showing ${shown.length} of ${d.animals.length}`}</div>`;
   for(const {an, i} of shown){
     const sp = an.species || 'cattle', owner = d.showmen.find(x => x.id === an.showmanId);
     h += `<div class="exh" style="margin-top:12px">
-      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px"><b>${esc(an.name || 'New animal')}</b><span class="pill">${esc(SPECIES[sp].label)}${owner ? ' · ' + esc(owner.first || '') : ' · <span class="warn-t">needs a showman</span>'}</span></div>
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px"><label class="check" style="margin:0"><input type="checkbox" data-act="barnSel" data-id="${esc(an.id)}"${(S.barnSel||new Set()).has(an.id)?' checked':''}> <b>${esc(an.name || 'New animal')}</b></label><span class="pill">${esc(SPECIES[sp].label)}${owner ? ' · ' + esc(owner.first || '') : ' · <span class="warn-t">needs a showman</span>'}</span></div>
       <div class="grid g4">
       <div><label>Species</label><select class="in" data-b="animals.${i}.species">${SP_ORDER.map(k => `<option value="${k}"${k===sp?' selected':''}>${SPECIES[k].label}</option>`).join('')}</select></div>
       <div><label>Animal name</label><input class="in" data-b="animals.${i}.name" value="${esc(an.name)}"></div>
@@ -1438,14 +1462,36 @@ document.addEventListener('click', e => {
       const inputs = document.querySelectorAll('[data-b$=".name"]'); if(inputs.length) inputs[inputs.length-1].focus();
       break; }
     case 'barnSmAnimals': S.barnSm = el.dataset.id; S.barnSp = ''; location.hash = 'barn-animals'; break;
-    case 'barnClear': S.barnSm = ''; S.barnSp = ''; render(true); break;
+    case 'barnClear': S.barnSm = ''; S.barnSp = ''; S.barnSel = new Set(); render(true); break;
+    case 'barnSel': { const sel = S.barnSel || (S.barnSel = new Set()); el.checked ? sel.add(el.dataset.id) : sel.delete(el.dataset.id); S.confirmDel = null; render(true); break; }
+    case 'barnSelAll': {
+      const d = getBarnDraft(), sel = S.barnSel || (S.barnSel = new Set());
+      const ids = barnShownAnimals(d).map(({an}) => an.id);
+      if(el.checked) ids.forEach(id => sel.add(id)); else ids.forEach(id => sel.delete(id));
+      S.confirmDel = null; render(true); break; }
+    case 'barnBulkDel': {
+      const mode = el.dataset.mode, key = 'barn|' + mode;
+      if(S.confirmDel !== key){ S.confirmDel = key; render(true); return; }
+      S.confirmDel = null;
+      const d = getBarnDraft(), shownIds = new Set(barnShownAnimals(d).map(({an}) => an.id));
+      const gone = new Set(mode === 'sel' ? [...(S.barnSel||[])].filter(id => shownIds.has(id)) : [...shownIds]);
+      const before = clone(d.animals);
+      d.animals = d.animals.filter(a => !gone.has(a.id));
+      S.barnSel = new Set();
+      saveBarnNow(`Removed ${gone.size} animal${gone.size===1?'':'s'}`, () => { S.barnUndo = {animals: before, count: gone.size}; });
+      break; }
+    case 'barnUndo': {
+      const u = S.barnUndo; if(!u) return;
+      getBarnDraft().animals = u.animals; S.barnUndo = null;
+      saveBarnNow('Animals restored'); break; }
+    case 'barnUndoClose': S.barnUndo = null; render(true); break;
     case 'rmBa': getBarnDraft().animals.splice(+el.dataset.i, 1); S.barnDirty = true; render(true); break;
     case 'saveBarn': {
       const d = getBarnDraft();
       for(const sm of d.showmen){ sm.first = (sm.first||'').trim(); sm.last = (sm.last||'').trim(); sm.town = (sm.town||'').trim(); if(!sm.first){ toast('Each showman needs a first name.', true); if(S.barnTab !== 'showmen') location.hash = 'barn-showmen'; return; } }
       for(const an of d.animals){ an.species = an.species || 'cattle'; if(!an.name || !an.breed || !an.sex){ toast('Each animal needs a name, breed and sex.', true); S.barnSm = ''; S.barnSp = ''; if(S.barnTab !== 'animals') location.hash = 'barn-animals'; else render(true); return; } if(!an.showmanId || !d.showmen.some(x => x.id === an.showmanId)){ toast(`Choose who shows ${an.name}.`, true); S.barnSm = 'none'; S.barnSp = ''; if(S.barnTab !== 'animals') location.hash = 'barn-animals'; else render(true); return; } }
       const data = {showmen:d.showmen, animals:d.animals};
-      enqueue(async () => { const {error} = await sb.from('barns').upsert({owner:S.uid, data, updated_at:new Date().toISOString()}); if(error) throw error; S.barn = data; S.barnDirty = false; S.barnDraft = null; toast('Barn saved'); render(true); });
+      enqueue(async () => { const {error} = await sb.from('barns').upsert({owner:S.uid, data, updated_at:new Date().toISOString()}); if(error) throw error; S.barn = data; S.barnDirty = false; S.barnDraft = null; S.barnUndo = null; toast('Barn saved'); render(true); });
       break; }
     /* enter */
     case 'saveEnter': {
@@ -1528,8 +1574,8 @@ document.addEventListener('click', e => {
 let mgrTimer = null;
 document.addEventListener('input', e => {
   const t = e.target, v = t.type === 'checkbox' ? t.checked : t.value;
-  if(t.id === 'barnSm'){ S.barnSm = t.value; render(true); return; }
-  if(t.id === 'barnSp'){ S.barnSp = t.value; render(true); return; }
+  if(t.id === 'barnSm'){ S.barnSm = t.value; S.barnSel = new Set(); S.confirmDel = null; render(true); return; }
+  if(t.id === 'barnSp'){ S.barnSp = t.value; S.barnSel = new Set(); S.confirmDel = null; render(true); return; }
   if(t.dataset.post){ const d = S.postDraft || (S.postDraft = {title:'', kind:'general', body:'', pinned:false}); d[t.dataset.post] = t.type === 'checkbox' ? t.checked : t.value; return; }
   if(t.id === 'userQ'){ S.userQ = t.value; render(true); return; }
   if(t.dataset.au){ if(t.type === 'radio'){ if(t.checked){ S.addUser.mode = t.value; render(true); } } else S.addUser[t.dataset.au] = t.value; return; }
