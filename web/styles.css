@@ -177,3 +177,25 @@ body.on-welcome #acct{display:none}
 .subtabs a{padding:9px 16px;text-decoration:none;color:var(--muted);font-weight:600;border-bottom:3px solid transparent;margin-bottom:-2px}
 .subtabs a.on{color:var(--ink);border-bottom-color:var(--rust)}
 .subtabs .cnt{display:inline-block;min-width:20px;text-align:center;font-size:.78rem;background:#e9dfcb;color:var(--ink);border-radius:99px;padding:1px 6px;margin-left:4px}
+
+/* bulletin board */
+.post{background:var(--card);border:1px solid var(--line);border-left:5px solid #b9ab92;border-radius:12px;padding:14px 16px;margin-bottom:12px}
+.post.pinned{box-shadow:0 4px 14px rgba(34,28,21,.08)}
+.post-h{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px}
+.post-t{font:700 1.3rem/1.15 "Barlow Condensed",Barlow,sans-serif}
+.post-b{margin-top:6px;white-space:normal;overflow-wrap:anywhere}
+.post-b a,.notice a b{color:var(--rust)}
+.kchip{font:700 .72rem/1 Barlow;text-transform:uppercase;letter-spacing:.08em;background:#efe7d6;color:var(--muted);border-radius:99px;padding:4px 8px}
+.pin{font-size:.8rem;font-weight:600;color:var(--ink)}
+.k-urgent{border-left-color:#b4322a}.k-urgent .kchip{background:#b4322a;color:#fff}
+.k-sched{border-left-color:var(--gold)}.k-sched .kchip{background:var(--gold);color:#fff}
+.k-weather{border-left-color:var(--blue)}.k-weather .kchip{background:var(--blue);color:#fff}
+.k-remind{border-left-color:var(--green)}.k-remind .kchip{background:var(--green);color:#fff}
+.k-results{border-left-color:#5b3a8c}.k-results .kchip{background:#5b3a8c;color:#fff}
+.notice{margin-bottom:12px;display:grid;gap:6px}
+.notice-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:var(--card);border:1px solid var(--line);border-left:5px solid #b9ab92;border-radius:10px;padding:10px 12px;color:var(--ink);text-decoration:none}
+.notice-row b{flex:1;min-width:160px}
+.badge{display:inline-block;min-width:20px;text-align:center;background:var(--rust);color:#fff;border-radius:99px;font:700 .75rem/1 Barlow;padding:4px 6px}
+nav a .badge{margin-left:4px;font-size:.7rem;padding:3px 6px}
+.notice-row.k-urgent{border-left-color:#b4322a}.notice-row.k-sched{border-left-color:var(--gold)}.notice-row.k-weather{border-left-color:var(--blue)}
+.notice-row.k-remind{border-left-color:var(--green)}.notice-row.k-results{border-left-color:#5b3a8c}

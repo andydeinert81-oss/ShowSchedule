@@ -482,6 +482,7 @@ function showListHTML(){
       ${head || smN ? `<span class="small">You’re entered: <b>${head} head</b>${smN ? `, ${smN} showmanship` : ''}</span>` : ''}</div></div>
       <div style="display:flex;gap:8px;flex-wrap:wrap">
         <a class="btn grn" href="#live-${esc(id)}" style="text-decoration:none">Follow live</a>
+        ${(() => { const n = unreadFor(id), any = postsFor(id).length; return any ? `<a class="btn" href="#board-${esc(id)}" style="text-decoration:none">Board${n ? ` <span class="badge">${n}</span>` : ''}</a>` : ''; })()}
         <a class="btn" href="#results-${esc(id)}" style="text-decoration:none">Results</a>
         ${s.entriesOpen || isManager(id) ? `<a class="btn" href="#enter-${esc(id)}" style="text-decoration:none">${head||smN ? 'Edit entries' : 'Enter'}</a>` : ''}
         ${isManager(id) ? `<a class="btn ghost" href="#office-${esc(id)}" style="text-decoration:none">Show office</a>
@@ -706,7 +707,7 @@ function viewLive(){
   if(!S.showsLoaded || !S.entriesLoaded) return loading();
   if(!S.shows[S.showId]) return notFound();
   const info = ringInfo(), {c, list, ci, done} = info;
-  let h = '';
+  let h = boardNoticeHTML(S.showId);
   if(!c.order && list.length) h += `<div class="banner"><b>Draft class list.</b> Classes are built automatically from entries and may change until the show manager locks the order.</div>`;
   if(!list.length) return h + `<div class="card empty"><h3>No classes yet</h3><p class="muted">Classes appear here as entries come in.${c.entriesOpen ? ` <a href="#enter-${esc(S.showId)}">Enter now</a>.` : ''}</p></div>`;
   const mine = myKeys();
@@ -742,6 +743,67 @@ function viewLive(){
 }
 
 /* ================= view: results / scoreboard ================= */
+/* ================= bulletin board ================= */
+const POST_KINDS = {
+  general:{label:'General', cls:''}, schedule:{label:'Schedule change', cls:'k-sched'}, urgent:{label:'Urgent', cls:'k-urgent'},
+  weather:{label:'Weather', cls:'k-weather'}, reminder:{label:'Reminder', cls:'k-remind'}, results:{label:'Results', cls:'k-results'}
+};
+S.posts = {}; S.postDraft = null; S.postEdit = null;
+const postsFor = sid => Object.values(S.posts).filter(p => p.show_id === sid)
+  .sort((a,b) => (b.pinned - a.pinned) || (b.created_at || '').localeCompare(a.created_at || ''));
+function seenMap(){ try{ return JSON.parse(localStorage.getItem('ss-seen') || '{}'); }catch(e){ return S._seen || (S._seen = {}); } }
+function markSeen(sid){
+  const latest = postsFor(sid).reduce((m, p) => (p.created_at > m ? p.created_at : m), '');
+  const m = seenMap(); if(!latest || m[sid] >= latest) return;
+  m[sid] = latest; S._seen = m; try{ localStorage.setItem('ss-seen', JSON.stringify(m)); }catch(e){}
+}
+const unreadFor = sid => { const seen = seenMap()[sid] || ''; return postsFor(sid).filter(p => p.created_at > seen && p.author !== S.uid).length; };
+function ago(ts){
+  const s2 = Math.max(0, (Date.now() - new Date(ts).getTime()) / 1000);
+  if(s2 < 60) return 'just now'; if(s2 < 3600) return `${Math.floor(s2/60)} min ago`; if(s2 < 86400) return `${Math.floor(s2/3600)} hr ago`;
+  return new Date(ts).toLocaleString(undefined, {month:'short', day:'numeric', hour:'numeric', minute:'2-digit'});
+}
+const richText = t => esc(t).replace(/(https?:\/\/[^\s<]+[^\s<.,;:!?)])/g, '<a href="$1" target="_blank" rel="noopener">$1</a>').replace(/\n/g, '<br>');
+function postHTML(p, manage){
+  const k = POST_KINDS[p.kind] || POST_KINDS.general;
+  return `<div class="post ${k.cls}${p.pinned ? ' pinned' : ''}">
+    <div class="post-h"><span class="kchip">${esc(k.label)}</span>${p.pinned ? '<span class="pin">📌 Pinned</span>' : ''}<span class="muted small" style="margin-left:auto">${esc(ago(p.created_at))}</span></div>
+    <div class="post-t">${esc(p.title)}</div>
+    ${p.body ? `<div class="post-b">${richText(p.body)}</div>` : ''}
+    <div class="muted small" style="margin-top:6px">Posted by ${esc(p.author_name || 'Show office')}${p.updated_at && p.created_at && (new Date(p.updated_at) - new Date(p.created_at) > 60000) ? ' · edited' : ''}</div>
+    ${manage ? `<div class="row-actions" style="margin-top:8px"><button class="btn sm ghost" data-act="postEdit" data-id="${esc(p.id)}">Edit</button>
+      <button class="btn sm ghost" data-act="postPin" data-id="${esc(p.id)}">${p.pinned ? 'Unpin' : 'Pin to top'}</button>
+      <button class="btn sm danger" data-act="postDel" data-id="${esc(p.id)}">${S.confirmDel === 'post|'+p.id ? 'Tap again to delete' : 'Delete'}</button></div>` : ''}
+  </div>`;
+}
+function composerHTML(){
+  const d = S.postDraft || (S.postDraft = {title:'', kind:'general', body:'', pinned:false});
+  return `<div class="card"><h3>${S.postEdit ? 'Edit post' : 'Post an update'}</h3>
+    <div class="grid g2"><div><label>Type</label><select class="in" data-post="kind">${Object.entries(POST_KINDS).map(([k, v]) => `<option value="${k}"${d.kind===k?' selected':''}>${esc(v.label)}</option>`).join('')}</select></div>
+      <div><label>Headline</label><input class="in" data-post="title" maxlength="140" value="${esc(d.title)}" placeholder="e.g. Weigh-in moved to 7:00 am"></div></div>
+    <label style="margin-top:10px">Details (optional)</label><textarea class="in" data-post="body" maxlength="5000" placeholder="Times, locations, links, what to bring…">${esc(d.body)}</textarea>
+    <div class="row-actions"><label class="check"><input type="checkbox" data-post="pinned"${d.pinned?' checked':''}> Pin to the top</label><span style="flex:1"></span>
+      ${S.postEdit ? `<button class="btn ghost" data-act="postCancel">Cancel</button>` : ''}<button class="btn pri" data-act="postSave">${S.postEdit ? 'Save changes' : 'Post'}</button></div></div>`;
+}
+function viewBoard(){
+  if(!S.showsLoaded) return loading();
+  const show = S.shows[S.showId]; if(!show) return notFound();
+  const posts = postsFor(S.showId), manage = isManager();
+  markSeen(S.showId);
+  let h = `<div class="who-bar"><h2 style="margin:0">Bulletin board</h2><span class="muted small">Updates from the show office</span></div>`;
+  if(manage) h += composerHTML();
+  if(!posts.length) return h + `<div class="card empty"><h3>No posts yet</h3><p class="muted">${manage ? 'Post schedule changes, weigh-in times, weather updates and reminders here. Everyone following the show sees them right away.' : 'Check back here for schedule changes, weigh-in times and other news from the show office.'}</p></div>`;
+  return h + posts.map(p => postHTML(p, manage)).join('');
+}
+function boardNoticeHTML(sid){
+  const day = Date.now() - 86400000;
+  const hot = postsFor(sid).filter(p => p.pinned || (p.kind === 'urgent' && new Date(p.created_at).getTime() > day)).slice(0, 2);
+  const unread = unreadFor(sid);
+  if(!hot.length && !unread) return '';
+  return `<div class="notice">${hot.map(p => `<a href="#board-${esc(sid)}" class="notice-row ${(POST_KINDS[p.kind]||{}).cls||''}"><span class="kchip">${p.pinned ? '📌' : ''} ${esc((POST_KINDS[p.kind]||POST_KINDS.general).label)}</span><b>${esc(p.title)}</b><span class="muted small">${esc(ago(p.created_at))}</span></a>`).join('')}
+    ${unread ? `<a href="#board-${esc(sid)}" class="notice-row"><span class="badge">${unread}</span><b>new post${unread===1?'':'s'} on the bulletin board</b><span class="muted small">Read →</span></a>` : ''}</div>`;
+}
+
 function viewResults(){
   if(S.noDb) return signInMsg('see results');
   if(!S.showsLoaded || !S.entriesLoaded) return loading();
@@ -1080,13 +1142,14 @@ function render(force){
   if(!sb){ $('#app').innerHTML = setupHTML(); return; }
   if(S.view === 'welcome' && S.authReady && S.uid){ S.view = 'shows'; history.replaceState(null, '', '#shows'); }
   rebuildLookup();
-  const inShow = ['live','results','enter','office'].includes(S.view) && S.showId;
+  if(S.view === 'board' && S.showId && S.showsLoaded) markSeen(S.showId);
+  const inShow = ['live','board','results','enter','office'].includes(S.view) && S.showId;
   const c = cfg(), show = S.shows[S.showId];
   $('#showName').textContent = inShow && show ? c.name : 'ShowSchedule';
   $('#showMeta').textContent = inShow && show ? [longDate(c.date), c.location].filter(Boolean).join(' · ') : '';
   let nav = [['shows','All shows'],['series','Series'],['barn','My barn'], ...(S.isOwner ? [['users','Users']] : [])].map(([k,l]) => `<a href="#${k}" class="${S.view===k || (k==='series' && S.view==='seriesOne')?'on':''}">${l}</a>`).join('');
   if(inShow){
-    const t = [['live','Live'],['results','Results'],['enter','Enter']]; if(isManager()) t.push(['office','Show office']);
+    const nb = unreadFor(S.showId); const t = [['live','Live'],['board', 'Board' + (nb ? ` <span class="badge">${nb}</span>` : '')],['results','Results'],['enter','Enter']]; if(isManager()) t.push(['office','Show office']);
     nav += `<span style="width:1px;background:#4a4136;margin:6px 6px"></span>` + t.map(([k,l]) => `<a href="#${k}-${esc(S.showId)}" class="${S.view===k?'on':''}">${l}</a>`).join('');
   }
   $('#tabs').innerHTML = S.view === 'welcome' ? '' : nav;
@@ -1097,7 +1160,7 @@ function render(force){
   if(S.uid && !S.noDb){ const n = S.myName || 'Account'; ac.className = 'acct'; ac.innerHTML = `<span class="av">${esc(n.trim()[0]||'?').toUpperCase()}</span>${esc(n.split(' ')[0])}`; }
   else { ac.className = 'acct out'; ac.textContent = 'Log in'; }
   if(S.loadErr && !S.showsLoaded && !['welcome','account','barn'].includes(S.view)){ $('#app').innerHTML = loadErrHTML(); renderRingbar(); return; }
-  const V = {welcome:viewWelcome, users:viewUsers, account:viewAccount, shows:viewShows, barn:viewBarn, live:viewLive, results:viewResults, enter:viewEnter, office:viewOffice, series:viewSeriesList, seriesOne:viewSeries}[S.view] || viewShows;
+  const V = {board:viewBoard, welcome:viewWelcome, users:viewUsers, account:viewAccount, shows:viewShows, barn:viewBarn, live:viewLive, results:viewResults, enter:viewEnter, office:viewOffice, series:viewSeriesList, seriesOne:viewSeries}[S.view] || viewShows;
   $('#app').innerHTML = V();
   if(fid && document.getElementById(fid)){ const s = document.getElementById(fid); s.focus(); try{ s.setSelectionRange(pos, pos); }catch(e){} }
   renderRingbar();
@@ -1203,6 +1266,29 @@ document.addEventListener('click', e => {
       S.confirmDel = null; deleteShow(el.dataset.id);
       break;
     case 'retryLoad': S.loadTries = 0; loadAll(); break;
+    case 'postSave': {
+      const d = S.postDraft || {}, title = (d.title || '').trim(), body = (d.body || '').trim();
+      if(!title){ toast('Add a headline.', true); return; }
+      const sid = S.showId, editId = S.postEdit;
+      if(editId){
+        const upd = {title, body, kind:d.kind || 'general', pinned:!!d.pinned, updated_at:new Date().toISOString()};
+        enqueue(async () => { const {error} = await sb.from('posts').update(upd).eq('id', editId); if(error) throw error;
+          S.posts[editId] = Object.assign({}, S.posts[editId], upd); S.postEdit = null; S.postDraft = null; toast('Post updated'); render(true); });
+      } else {
+        const now = new Date().toISOString();
+        const row = {id: crypto.randomUUID(), show_id:sid, author:S.uid, author_name:S.myName || '', kind:d.kind || 'general', title, body, pinned:!!d.pinned};
+        enqueue(async () => { const {error} = await sb.from('posts').insert(row); if(error) throw error;
+          S.posts[row.id] = Object.assign({created_at:now, updated_at:now}, S.posts[row.id] || {}, row); S.postDraft = null; toast('Posted'); render(true); });
+      }
+      break; }
+    case 'postEdit': { const p = S.posts[el.dataset.id]; if(!p) return; S.postEdit = p.id; S.postDraft = {title:p.title, body:p.body, kind:p.kind, pinned:p.pinned}; render(true); window.scrollTo({top:0, behavior:'smooth'}); break; }
+    case 'postCancel': S.postEdit = null; S.postDraft = null; render(true); break;
+    case 'postPin': { const p = S.posts[el.dataset.id]; if(!p) return; const pinned = !p.pinned;
+      enqueue(async () => { const {error} = await sb.from('posts').update({pinned}).eq('id', p.id); if(error) throw error; S.posts[p.id] = Object.assign({}, S.posts[p.id], {pinned}); render(true); }); break; }
+    case 'postDel': {
+      const id = el.dataset.id; if(S.confirmDel !== 'post|'+id){ S.confirmDel = 'post|'+id; render(true); return; }
+      S.confirmDel = null;
+      enqueue(async () => { const {error} = await sb.from('posts').delete().eq('id', id); if(error) throw error; delete S.posts[id]; toast('Post deleted'); render(true); }); break; }
     case 'authTab': S.authTab = el.dataset.k; S.authMsg = ''; S.authErr = ''; render(true); break;
     case 'logout': sb.auth.signOut().then(() => { toast('Logged out'); location.hash = 'welcome'; }); break;
     case 'showWhen': S.showWhen = el.dataset.k; render(true); break;
@@ -1333,6 +1419,7 @@ document.addEventListener('input', e => {
   const t = e.target, v = t.type === 'checkbox' ? t.checked : t.value;
   if(t.id === 'barnSm'){ S.barnSm = t.value; render(true); return; }
   if(t.id === 'barnSp'){ S.barnSp = t.value; render(true); return; }
+  if(t.dataset.post){ const d = S.postDraft || (S.postDraft = {title:'', kind:'general', body:'', pinned:false}); d[t.dataset.post] = t.type === 'checkbox' ? t.checked : t.value; return; }
   if(t.id === 'userQ'){ S.userQ = t.value; render(true); return; }
   if(t.dataset.roleUser){ const id = t.dataset.roleUser, role = t.value; enqueue(async () => { const {error} = await sb.from('profiles').update({role}).eq('id', id); if(error) throw error; const u = (S.users||[]).find(x => x.id === id); if(u) u.role = role; toast('Role updated'); }); return; }
   if(t.id === 'showSearch'){ S.showQ = t.value; const l = $('#showList'); if(l) l.innerHTML = showListHTML(); return; }
@@ -1382,8 +1469,8 @@ document.addEventListener('change', e => {
 document.addEventListener('focusout', () => setTimeout(() => { if(S.pending && !isTyping()) render(); }, 0));
 function route(){
   const h = (location.hash||'').slice(1);
-  const m = h.match(/^(live|results|enter|office)-([A-Za-z0-9]+)$/), sm = h.match(/^series-([A-Za-z0-9]+)$/);
-  if(m){ if(S.showId !== m[2]){ S.editing = null; S.setDraft = {}; S.showSettings = false; S.expanded = new Set(); S.placeClass = null; S.placeDraft = {}; S.mgrHits = []; } S.view = m[1]; S.showId = m[2]; if(S.openSettingsFor === m[2]){ S.showSettings = true; S.openSettingsFor = null; } }
+  const m = h.match(/^(live|board|results|enter|office)-([A-Za-z0-9]+)$/), sm = h.match(/^series-([A-Za-z0-9]+)$/);
+  if(m){ if(S.showId !== m[2]){ S.editing = null; S.setDraft = {}; S.showSettings = false; S.expanded = new Set(); S.placeClass = null; S.placeDraft = {}; S.mgrHits = []; S.postDraft = null; S.postEdit = null; } S.view = m[1]; S.showId = m[2]; if(S.openSettingsFor === m[2]){ S.showSettings = true; S.openSettingsFor = null; } }
   else if(sm){ if(S.seriesId !== sm[1]){ S.serDraft = null; S.serCat = 'overall'; S.serBreed = ''; } S.view = 'seriesOne'; S.seriesId = sm[1]; }
   else if(/^barn(-showmen|-animals)?$/.test(h)){ S.view = 'barn'; S.barnTab = h === 'barn-animals' ? 'animals' : 'showmen'; }
   else S.view = ['series','account','users','shows'].includes(h) ? h : 'welcome';
@@ -1421,8 +1508,10 @@ async function loadAll(){
   clearTimeout(loadTimer);
   loadTimer = setTimeout(() => { S.slow = true; render(); }, 10000);
   try{
-    const [shows, series, entries] = await Promise.all([
-      fetchAll('shows', 'id,data,managers'), fetchAll('series', 'id,name,year,rules,created_by'), fetchAll('entries', 'show_id,doc_id,owner,exhibitors')]);
+    const [shows, series, entries, posts] = await Promise.all([
+      fetchAll('shows', 'id,data,managers'), fetchAll('series', 'id,name,year,rules,created_by'), fetchAll('entries', 'show_id,doc_id,owner,exhibitors'),
+      fetchAll('posts', 'id,show_id,author,author_name,kind,title,body,pinned,created_at,updated_at').catch(e => { console.warn('posts unavailable', e); return null; })]);
+    if(posts) S.posts = Object.fromEntries(posts.map(p => [p.id, p]));
     S.shows = Object.fromEntries(shows.map(r => [r.id, showFromRow(r)]));
     S.series = Object.fromEntries(series.map(r => [r.id, seriesFromRow(r)]));
     S.entryRows = new Map(entries.map(r => [r.show_id+'::'+r.doc_id, r]));
@@ -1446,6 +1535,12 @@ function subscribeLive(){
       const r = p.eventType === 'DELETE' ? p.old : p.new, k = r.show_id+'::'+r.doc_id;
       if(p.eventType === 'DELETE') S.entryRows.delete(k); else S.entryRows.set(k, p.new);
       rebuildEntries(); render();
+    })
+    .on('postgres_changes', {event:'*', schema:'public', table:'posts'}, p => {
+      if(p.eventType === 'DELETE') delete S.posts[p.old.id];
+      else { const isNew = p.eventType === 'INSERT' && !S.posts[p.new.id]; S.posts[p.new.id] = p.new;
+        if(isNew && p.new.author !== S.uid && S.view !== 'board'){ const sh = S.shows[p.new.show_id]; toast(`📣 ${sh ? sh.name + ': ' : ''}${p.new.title}`); } }
+      render();
     })
     .on('postgres_changes', {event:'*', schema:'public', table:'series'}, p => {
       if(p.eventType === 'DELETE') delete S.series[p.old.id]; else S.series[p.new.id] = seriesFromRow(p.new);

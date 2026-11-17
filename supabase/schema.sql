@@ -164,13 +164,42 @@ drop policy if exists "barns: owner only" on public.barns;
 create policy "barns: owner only" on public.barns for all to authenticated
   using (owner = auth.uid()) with check (owner = auth.uid());
 
+-- ───────────────────────── bulletin board ─────────────────────────
+-- Announcements a show's managers post for exhibitors and families.
+create table if not exists public.posts (
+  id          uuid primary key default gen_random_uuid(),
+  show_id     text not null references public.shows on delete cascade,
+  author      uuid references auth.users on delete set null default auth.uid(),
+  author_name text not null default '',
+  kind        text not null default 'general' check (kind in ('general','schedule','urgent','weather','results','reminder')),
+  title       text not null check (char_length(title) between 1 and 140),
+  body        text not null default '' check (char_length(body) <= 5000),
+  pinned      boolean not null default false,
+  created_at  timestamptz not null default now(),
+  updated_at  timestamptz not null default now()
+);
+create index if not exists posts_show_idx on public.posts (show_id, created_at desc);
+alter table public.posts enable row level security;
+
+drop policy if exists "posts: anyone reads" on public.posts;
+create policy "posts: anyone reads" on public.posts for select to anon, authenticated using (true);
+drop policy if exists "posts: show managers post" on public.posts;
+create policy "posts: show managers post" on public.posts for insert to authenticated
+  with check (public.is_show_manager(show_id) and author = auth.uid());
+drop policy if exists "posts: show managers edit" on public.posts;
+create policy "posts: show managers edit" on public.posts for update to authenticated
+  using (public.is_show_manager(show_id)) with check (public.is_show_manager(show_id));
+drop policy if exists "posts: show managers delete" on public.posts;
+create policy "posts: show managers delete" on public.posts for delete to authenticated
+  using (public.is_show_manager(show_id));
+
 -- ───────────────────────── access for the website ─────────────────────────
 -- Newer Supabase projects don't always let the website's roles (anon = visitors,
 -- authenticated = logged-in users) use new tables automatically, so grant it here.
 -- Row-level security above still decides which rows each person can see or change.
 grant usage on schema public to anon, authenticated;
-grant select on public.shows, public.series, public.entries to anon, authenticated;
-grant insert, update, delete on public.shows, public.series, public.entries to authenticated;
+grant select on public.shows, public.series, public.entries, public.posts to anon, authenticated;
+grant insert, update, delete on public.shows, public.series, public.entries, public.posts to authenticated;
 grant select, update on public.profiles to authenticated;
 grant select, insert, update, delete on public.barns to authenticated;
 grant execute on function public.my_role(), public.is_admin(), public.can_create_shows(),
@@ -183,4 +212,5 @@ begin
   begin alter publication supabase_realtime add table public.shows;   exception when duplicate_object then null; end;
   begin alter publication supabase_realtime add table public.entries; exception when duplicate_object then null; end;
   begin alter publication supabase_realtime add table public.series;  exception when duplicate_object then null; end;
+  begin alter publication supabase_realtime add table public.posts;   exception when duplicate_object then null; end;
 end $$;
