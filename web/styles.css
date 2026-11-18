@@ -216,7 +216,7 @@ nav a .badge{margin-left:4px;font-size:.7rem;padding:3px 6px}
 .pd-title{font:700 20pt/1.1 "Barlow Condensed",Arial,sans-serif}
 .pd-sub{font-size:10pt;color:#333}
 .pd-species{font:700 15pt "Barlow Condensed",Arial,sans-serif;text-transform:uppercase;letter-spacing:.06em;border-bottom:1px solid #000;margin:16px 0 6px}
-.pclass{margin:10px 0 14px;break-inside:avoid-page}
+.pclass{margin:10px 0 14px;break-inside:avoid-page;page-break-inside:avoid}
 .pc-h{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;border-bottom:1px solid #999;padding-bottom:3px;margin-bottom:4px}
 .pc-num{font:700 11pt Barlow,Arial;background:#000;color:#fff;border-radius:4px;padding:1px 7px}
 .pc-t{font:700 13pt "Barlow Condensed",Arial,sans-serif}
@@ -231,7 +231,7 @@ nav a .badge{margin-left:4px;font-size:.7rem;padding:3px 6px}
 .pt .pl{width:70px;border-left:1px solid #999}
 .pt tr.scr td{color:#777;text-decoration:line-through}
 .print-doc.big{font-size:13pt}.print-doc.big .pt{font-size:12.5pt}.print-doc.big .pc-t{font-size:16pt}.print-doc.big .pt .bk{font-size:15pt}
-.pb{break-before:page}
+.pb{break-before:page;page-break-before:always}
 @media print{
   @page{margin:.5in}
   html,body{background:#fff!important}
@@ -247,3 +247,10 @@ nav a .badge{margin-left:4px;font-size:.7rem;padding:3px 6px}
 .prk{align-items:flex-start!important}.prk input{margin-top:2px}
 .inl{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.sm-num{width:76px!important;padding:6px 8px}
 .sexord{display:flex;flex-wrap:wrap;margin-top:4px}
+.pc-show{font-size:9pt;color:#444;margin-bottom:4px}
+/* show page breaks in the on-screen preview */
+@media screen{
+  .print-doc .pb{border-top:2px dashed #b9ab92;margin-top:26px;padding-top:22px;position:relative}
+  .print-doc .pb::before{content:"new page";position:absolute;top:-11px;left:50%;transform:translateX(-50%);background:#fff;color:#8a7d66;font:600 .72rem Barlow,Arial;text-transform:uppercase;letter-spacing:.1em;padding:0 8px}
+}
+@media print{ .pt tr{page-break-inside:avoid} .pt thead{display:table-header-group} }

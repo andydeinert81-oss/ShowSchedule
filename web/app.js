@@ -1128,10 +1128,13 @@ function printDocHTML(c, list, chosen, P){
       return;
     }
     const sec = printSection(cls, c); if(!keys.has(sec.key)) return;
-    const spBreak = P.breakSp && lastSp !== null && sec.sp !== lastSp;
-    if(sec.sp !== lastSp) h += `<div class="pd-species${spBreak ? ' pb' : ''}">${esc(SPECIES[sec.sp].label)}</div>`;
+    const newSp = sec.sp !== lastSp;
+    // a new page goes before the species heading (so it never sits alone at the bottom of a page), else before the class
+    const brk = !first && ((P.breakSp && newSp) || P.breakClass);
+    if(newSp) h += `<div class="pd-species${brk ? ' pb' : ''}">${esc(SPECIES[sec.sp].label)}</div>`;
     lastSp = sec.sp;
-    const cb = P.breakClass && !first && !spBreak ? ' pb' : ''; first = false;
+    const cb = brk && !newSp ? ' pb' : ''; first = false;
+    const steward = P.breakClass ? `<div class="pc-show">${esc(c.name)}${c.date ? ' · ' + esc(longDate(c.date)) : ''}</div>` : '';
     const isSm = cls.kind === 'sm';
     const cols = isSm ? ['Back #','Exhibitor','Age', P.cols.town && 'Hometown / club', P.cols.place && 'Place'].filter(Boolean)
                       : ['Back #','Exhibitor', P.cols.town && 'Hometown / club','Animal', P.cols.tag && 'Tag / reg #', P.cols.breed && 'Breed', P.cols.detail && (DIV[cls.div]?.market ? 'Weight' : 'Born'), P.cols.place && 'Place'].filter(Boolean);
@@ -1142,7 +1145,7 @@ function printDocHTML(c, list, chosen, P){
       const an = L.an, mk = DIV[animalDiv(an, c)]?.market;
       return `<tr class="${an.scratched ? 'scr' : ''}"><td class="bk">${esc(backOf(k))}</td><td><b>${esc(L.ex.name)}</b></td>${P.cols.town ? `<td>${esc(L.ex.town||'')}</td>` : ''}<td>${esc(an.name||'')}${an.scratched ? ' <i>(scratched)</i>' : ''}</td>${P.cols.tag ? `<td>${esc(an.tag||'')}</td>` : ''}${P.cols.breed ? `<td>${esc(an.breed||'')}</td>` : ''}${P.cols.detail ? `<td>${mk ? (an.weight ? esc(num(an.weight).toLocaleString()) + ' lb' : '') : esc(fmtD(an.birthdate))}</td>` : ''}${P.cols.place ? '<td class="pl"></td>' : ''}</tr>`;
     }).join('');
-    h += `<div class="pclass${cb}"><div class="pc-h"><span class="pc-num">${i+1}</span><span class="pc-t">${esc(cls.title)}</span>${cls.sub ? `<span class="pc-s">${esc(cls.sub)}</span>` : ''}<span class="pc-n">${esc([cls.range, heads(cls)].filter(Boolean).join(' · '))}</span></div>
+    h += `<div class="pclass${cb}">${steward}<div class="pc-h"><span class="pc-num">${i+1}</span><span class="pc-t">${esc(cls.title)}</span>${cls.sub ? `<span class="pc-s">${esc(cls.sub)}</span>` : ''}<span class="pc-n">${esc([cls.range, heads(cls)].filter(Boolean).join(' · '))}</span></div>
       ${cls.members.length ? `<table class="pt"><thead><tr>${cols.map(x => `<th${x==='Place' ? ' class="pl"' : x==='Back #' ? ' class="bk"' : ''}>${x}</th>`).join('')}</tr></thead><tbody>${rows}</tbody></table>` : '<div class="pc-note">No entries.</div>'}</div>`;
   });
   return h;
