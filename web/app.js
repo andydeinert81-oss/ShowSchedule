@@ -32,7 +32,8 @@ const DIV = Object.fromEntries(DIVS.map(d => [d.key, d]));
 const DEFAULT_RULES = {mode:'size', table:[10,9,8,7,6,5,4,3,2,1], champBonus:5, resBonus:3, champTop:true, overall:[10,5,3,2,1], minShows:2, bestN:0};
 const DEFAULT_CFG = {
   name:'New show', date:'', location:'', seriesId:'', managers:[],
-  divs: Object.fromEntries(DIVS.map(d => [d.key, {on: d.species==='cattle', breeds:[...SPECIES[d.species].breeds], combine:!!d.combine, byMonth: d.key==='bbeef'}])),
+  divs: Object.fromEntries(DIVS.map(d => [d.key, {on: d.species==='cattle', breeds:[...SPECIES[d.species].breeds], combine:!!d.combine, byMonth: d.key==='bbeef',
+    max:'', minMonth:3, allBreeds: d.key==='mbeef' ? ['Heifer'] : [], sexOrder:[...d.sexes]}])),
   sm:{cattle:true, sheep:false, goat:false, swine:false},
   divisions:[{name:'Junior',min:8,max:10},{name:'Intermediate',min:11,max:13},{name:'Senior',min:14,max:21}],
   maxPerClass:10, startBack:101, minPerHead:1.5, driveMin:5,
@@ -72,9 +73,9 @@ function normShow(s){
   const divs = {};
   if(s && !s.divs && s.breeds){            // single-show cattle version
     const sx = s.sexes || [];
-    for(const d of DIVS) divs[d.key] = {on:false, breeds:[...SPECIES[d.species].breeds], combine:!!d.combine};
-    divs.bbeef = {on: sx.some(x => !isSteer(x)), breeds:[...s.breeds], combine:false};
-    divs.mbeef = {on: sx.some(isSteer), breeds:[...s.breeds], combine:false};
+    for(const d of DIVS) divs[d.key] = Object.assign({}, DEFAULT_CFG.divs[d.key], {on:false});
+    divs.bbeef = Object.assign({}, DEFAULT_CFG.divs.bbeef, {on: sx.some(x => !isSteer(x)), breeds:[...s.breeds]});
+    divs.mbeef = Object.assign({}, DEFAULT_CFG.divs.mbeef, {on: sx.some(isSteer), breeds:[...s.breeds]});
     c.sm = {cattle:true};
   } else {
     for(const d of DIVS) divs[d.key] = Object.assign({}, DEFAULT_CFG.divs[d.key], (s && s.divs && s.divs[d.key]) || {}, s && s.divs && !s.divs[d.key] ? {on:false} : {});
@@ -198,6 +199,33 @@ function rangeText(part, byWeight){
   if(!b.length) return '';
   return b[0] === b[b.length-1] ? `Born ${fmtD(b[0])}` : `Born ${fmtD(b[0])} – ${fmtD(b[b.length-1])}`;
 }
+/* Birth-month classes: youngest month first; a month with fewer than `min` head is
+   combined with the next (older) month until the class reaches the minimum. Leftover
+   months at the end join the class before them only if it stays within `max`. */
+function monthBuckets(g, min, max = Infinity){
+  const byMonth = new Map();
+  for(const a of g){ const mo = (a.an.birthdate||'').slice(0,7); if(!byMonth.has(mo)) byMonth.set(mo, []); byMonth.get(mo).push(a); }
+  const months = [...byMonth.keys()].filter(Boolean).sort((x,y) => y.localeCompare(x));
+  const out = []; let cur = null;
+  for(const mo of months){
+    if(!cur) cur = {months:[], items:[]};
+    cur.months.push(mo); cur.items.push(...byMonth.get(mo));
+    if(cur.items.length >= min){ out.push(cur); cur = null; }
+  }
+  if(cur){
+    const last = out[out.length-1];
+    if(last && last.items.length + cur.items.length <= max){ last.months.push(...cur.months); last.items.push(...cur.items); }
+    else out.push(cur);
+  }
+  const mName = (mo, yr) => new Date(mo+'-15T12:00').toLocaleDateString(undefined, yr ? {month:'long', year:'numeric'} : {month:'long'});
+  const res = out.map(b => {
+    const ms = [...b.months].sort(), lo = ms[0], hi = ms[ms.length-1];
+    const label = lo === hi ? `Born ${mName(lo, true)}` : `Born ${mName(lo, lo.slice(0,4) !== hi.slice(0,4))} – ${mName(hi, true)}`;
+    return {key: ms.join('+'), label, items: b.items};
+  });
+  if(byMonth.has('')) res.push({key:'none', label:'Birth date not given', items: byMonth.get('')});
+  return res;
+}
 function sexTitle(d, sex){ return `${d.market && !/steer|barrow|wether/i.test(sex) ? 'Market ' : ''}${plural(sex)}`; }
 function buildAuto(sid = S.showId){
   const c = cfgFor(sid);
@@ -218,31 +246,38 @@ function buildAuto(sid = S.showId){
       if(left.length) smC.push({id:`s|${sp}|unplaced|1`, kind:'sm', species:sp, group:`s|${sp}|unplaced`, title:`${SPECIES[sp].sm} – age outside divisions`, sub:'', range:'Check ages', members:left.map(e=>e.key)});
     }
     for(const d of DIVS.filter(d => d.species===sp && c.divs[d.key].on)){
-      const dv = c.divs[d.key], g0 = animals.filter(a => a.div === d.key);
+      const dv = c.divs[d.key], g0 = animals.filter(a => a.div === d.key), max = num(dv.max) || c.maxPerClass;
       const breeds = [...dv.breeds, ...[...new Set(g0.map(a=>a.an.breed).filter(b => !dv.breeds.includes(b)))].sort()];
-      const sexes = dv.combine ? [null] : [...d.sexes, ...new Set(g0.map(a=>a.an.sex).filter(x => !d.sexes.includes(x)))];
-      for(const sex of sexes) for(const br of breeds){
-        const g = g0.filter(a => a.an.breed===br && (sex===null || a.an.sex===sex));
-        if(!g.length) continue;
+      const order = [...(dv.sexOrder || []).filter(x => d.sexes.includes(x)), ...d.sexes.filter(x => !(dv.sexOrder || []).includes(x))];
+      const sexes = dv.combine ? [null] : [...order, ...new Set(g0.map(a=>a.an.sex).filter(x => !d.sexes.includes(x)))];
+      const together = new Set(dv.combine ? [] : (dv.allBreeds || []));
+      // one breed group → classes (+ a champion drive when it splits)
+      const makeGroup = (g, group, title, sex) => {
         g.sort(d.market ? (a,b)=>num(a.an.weight)-num(b.an.weight) : (a,b)=>(b.an.birthdate||'').localeCompare(a.an.birthdate||''));
-        const group = `${d.key}|${br}|${sex||'all'}`;
-        const title = sex===null ? `${br} ${d.label}s` : `${br} ${sexTitle(d, sex)}`;
         let made = 0;
         if(dv.byMonth && !d.market && /heifer/i.test(sex||'')){
-          const months = [...new Set(g.map(a => (a.an.birthdate||'').slice(0,7)))];   // already youngest first
-          months.sort((x,y) => (y||'0').localeCompare(x||'0'));
-          for(const mo of months){
-            const parts = chunk(g.filter(a => (a.an.birthdate||'').slice(0,7) === mo), c.maxPerClass);
-            const ml = mo ? new Date(mo+'-15T12:00').toLocaleDateString(undefined,{month:'long', year:'numeric'}) : 'Birth date not given';
-            parts.forEach((p,i) => { made++; dc.push({id:`b|${group}|m${mo||'none'}|${i+1}`, kind:'breed', div:d.key, group, title,
-              sub: (mo ? `Born ${ml}` : ml) + (parts.length>1 ? ` · ${i+1} of ${parts.length}` : ''), range:'', members: p.map(a=>a.key)}); });
+          for(const bk of monthBuckets(g, Math.max(1, num(dv.minMonth) || 1), max)){
+            const parts = chunk(bk.items, max);
+            parts.forEach((p,i) => { made++; dc.push({id:`b|${group}|m${bk.key}|${i+1}`, kind:'breed', div:d.key, group, title,
+              sub: bk.label + (parts.length>1 ? ` · ${i+1} of ${parts.length}` : ''), range:'', members: p.map(a=>a.key)}); });
           }
         } else {
-          const parts = chunk(g, c.maxPerClass);
+          const parts = chunk(g, max);
           parts.forEach((p,i) => { made++; dc.push({id:`b|${group}|${i+1}`, kind:'breed', div:d.key, group, title,
             sub: parts.length>1 ? `Class ${i+1} of ${parts.length}` : '', range: rangeText(p, d.market), members: p.map(a=>a.key)}); });
         }
         if(c.drives && made > 1) dc.push({id:`d|${group}`, kind:'drive', div:d.key, group, title:`${title} Champion Drive`, sub:'Top two from each class return', range:'', members:[]});
+      };
+      for(const sex of sexes){
+        if(sex !== null && together.has(sex)){
+          const g = g0.filter(a => a.an.sex === sex);
+          if(g.length) makeGroup(g, `${d.key}|All breeds|${sex}`, sexTitle(d, sex), sex);
+          continue;
+        }
+        for(const br of breeds){
+          const g = g0.filter(a => a.an.breed===br && (sex===null || a.an.sex===sex));
+          if(g.length) makeGroup(g, `${d.key}|${br}|${sex||'all'}`, sex===null ? `${br} ${d.label}s` : `${br} ${sexTitle(d, sex)}`, sex);
+        }
       }
     }
     out.push(...(c.smPos[sp] === 'last' ? [...dc, ...smC] : [...smC, ...dc]));
@@ -1178,7 +1213,19 @@ function settingsHTML(c){
       h += `<label style="margin-top:8px">Breeds, in show order (one per line)</label><textarea class="in" data-set="div.${d.key}.breeds" style="min-height:90px">${esc(val('div.'+d.key+'.breeds', c.divs[d.key].breeds.join('\n')))}</textarea>
         <div class="muted small" style="margin-top:4px">${d.market ? 'Classes split by weight' : 'Classes split by birth date'}${d.sexes.length > 1 ? ` · sexes: ${esc(d.sexes.join(', '))}` : ''}</div>`;
       if(d.sexes.length > 1) h += `<label class="check small" style="margin-top:6px"><input type="checkbox" data-set="div.${d.key}.combine"${val('div.'+d.key+'.combine', c.divs[d.key].combine)?' checked':''}> Show ${esc(d.sexes.join(' & ').toLowerCase())} together</label>`;
-      if(d.key === 'bbeef') h += `<label class="check small" style="margin-top:6px"><input type="checkbox" data-set="div.${d.key}.byMonth"${val('div.'+d.key+'.byMonth', c.divs[d.key].byMonth)?' checked':''}> Heifers: one class for each birth month in a breed</label>`;
+      if(d.key === 'bbeef'){
+        const bm = val('div.'+d.key+'.byMonth', c.divs[d.key].byMonth);
+        h += `<label class="check small" style="margin-top:6px"><input type="checkbox" data-set="div.${d.key}.byMonth"${bm?' checked':''}> Heifers: a class for each birth month in a breed</label>`;
+        if(bm) h += `<div class="inl" style="margin:4px 0 0 26px"><span class="small">Combine months until a class has at least</span><input class="in sm-num" type="number" min="1" data-set="div.${d.key}.minMonth" value="${esc(val('div.'+d.key+'.minMonth', c.divs[d.key].minMonth))}"><span class="small">head</span></div>`;
+      }
+      h += `<div class="inl" style="margin-top:8px"><span class="small">Most head per class</span><input class="in sm-num" type="number" min="1" data-set="div.${d.key}.max" value="${esc(val('div.'+d.key+'.max', c.divs[d.key].max))}" placeholder="${esc(c.maxPerClass)}"><span class="muted small">blank = show default (${esc(c.maxPerClass)})</span></div>`;
+      const comb = val('div.'+d.key+'.combine', c.divs[d.key].combine);
+      if(d.sexes.length > 1 && !comb){
+        const so = val('div.'+d.key+'.sexOrder', c.divs[d.key].sexOrder), ab = val('div.'+d.key+'.allBreeds', c.divs[d.key].allBreeds) || [];
+        const ord = [...so.filter(x => d.sexes.includes(x)), ...d.sexes.filter(x => !so.includes(x))];
+        h += `<div class="small" style="margin-top:8px"><b>Show order</b> <span class="muted">(first to last)</span></div><div class="sexord">${ord.map((x, i) => `<span class="mgr">${esc(sexTitle(d, x))}${i ? `<button data-act="sexUp" data-div="${d.key}" data-sex="${esc(x)}" title="Show earlier">↑</button>` : ''}</span>`).join('')}</div>`;
+        h += `<div class="small" style="margin-top:8px"><b>All breeds together</b> <span class="muted">(no breed classes)</span></div><div style="display:flex;gap:14px;flex-wrap:wrap">${d.sexes.map(x => `<label class="check small"><input type="checkbox" data-act="allBreeds" data-div="${d.key}" data-sex="${esc(x)}"${ab.includes(x)?' checked':''}> ${esc(sexTitle(d, x))}</label>`).join('')}</div>`;
+      }
     }
     h += `</div>`;
   }
@@ -1392,9 +1439,10 @@ function parseSettings(){
   for(const k of ['entriesOpen','drives','ageJan1']) if(d[k] !== undefined) out[k] = !!d[k];
   const divs = clone(c.divs); let dt = false;
   for(const dv of DIVS){
-    for(const f of ['on','breeds','combine','byMonth']){
+    for(const f of ['on','breeds','combine','byMonth','max','minMonth','allBreeds','sexOrder']){
       const v = d[`div.${dv.key}.${f}`]; if(v === undefined) continue; dt = true;
-      divs[dv.key][f] = f === 'breeds' ? lines(v) : !!v;
+      divs[dv.key][f] = f === 'breeds' ? lines(v) : f === 'max' ? (num(v) > 0 ? Math.round(num(v)) : '') : f === 'minMonth' ? Math.max(1, Math.round(num(v)) || 1)
+        : (f === 'allBreeds' || f === 'sexOrder') ? [...v] : !!v;
     }
   }
   if(dt || !(S.shows[S.showId] || {}).divs) out.divs = divs;
@@ -1522,6 +1570,15 @@ document.addEventListener('click', e => {
     case 'prSp': [...document.querySelectorAll('[data-act=prKey]')].filter(x => x.dataset.k.startsWith(el.dataset.sp + '|')).forEach(x => el.checked ? S.print.keys.add(x.dataset.k) : S.print.keys.delete(x.dataset.k)); render(true); break;
     case 'prCol': S.print.cols[el.dataset.k] = el.checked; render(true); break;
     case 'prOpt': S.print[el.dataset.k] = el.checked; render(true); break;
+    case 'sexUp': {
+      const k = el.dataset.div, x = el.dataset.sex, c0 = cfg(), d = DIV[k];
+      const cur = S.setDraft['div.'+k+'.sexOrder'] || c0.divs[k].sexOrder || d.sexes;
+      const ord = [...cur.filter(v => d.sexes.includes(v)), ...d.sexes.filter(v => !cur.includes(v))], i = ord.indexOf(x);
+      if(i > 0){ [ord[i-1], ord[i]] = [ord[i], ord[i-1]]; S.setDraft['div.'+k+'.sexOrder'] = ord; render(true); }
+      break; }
+    case 'allBreeds': {
+      const k = el.dataset.div, x = el.dataset.sex, cur = new Set(S.setDraft['div.'+k+'.allBreeds'] || cfg().divs[k].allBreeds || []);
+      el.checked ? cur.add(x) : cur.delete(x); S.setDraft['div.'+k+'.allBreeds'] = [...cur]; break; }
     case 'authTab': S.authTab = el.dataset.k; S.authMsg = ''; S.authErr = ''; render(true); break;
     case 'logout': sb.auth.signOut().then(() => { toast('Logged out'); location.hash = 'welcome'; }); break;
     case 'showWhen': S.showWhen = el.dataset.k; render(true); break;
@@ -1705,7 +1762,7 @@ document.addEventListener('input', e => {
   }
   if(t.dataset.smsp){ const [i, sp] = t.dataset.smsp.split('.'), ex = getDraft(t.dataset.doc)[+i]; ex.showmanship = v ? [...new Set([...ex.showmanship, sp])] : ex.showmanship.filter(x => x !== sp); return; }
   if(t.dataset.path){ setPath(getDraft(t.dataset.doc), t.dataset.path, v); if(/\.div$/.test(t.dataset.path)) render(true); return; }
-  if(t.dataset.set){ S.setDraft[t.dataset.set] = v; if(/^(div\.\w+\.on|sm\.\w+)$/.test(t.dataset.set)) render(true); return; }
+  if(t.dataset.set){ S.setDraft[t.dataset.set] = v; if(/^(div\.\w+\.(on|byMonth|combine)|sm\.\w+)$/.test(t.dataset.set)) render(true); return; }
   if(t.dataset.sr){ setPath(S.serDraft, t.dataset.sr, v); if(t.dataset.sr === 'rules.mode') render(true); return; }
   if(t.dataset.b){
     setPath(getBarnDraft(), t.dataset.b, v); S.barnDirty = true;

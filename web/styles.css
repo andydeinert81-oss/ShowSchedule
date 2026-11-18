@@ -245,3 +245,5 @@ nav a .badge{margin-left:4px;font-size:.7rem;padding:3px 6px}
 }
 .pt th.bk{font:700 8.5pt Barlow,Arial;white-space:nowrap}
 .prk{align-items:flex-start!important}.prk input{margin-top:2px}
+.inl{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.sm-num{width:76px!important;padding:6px 8px}
+.sexord{display:flex;flex-wrap:wrap;margin-top:4px}
