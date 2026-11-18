@@ -1022,6 +1022,97 @@ function seriesEditorHTML(ser){
     <div class="row-actions"><button class="btn danger" data-act="delSeries">${S.confirmDel==='series'?'Tap again to delete series':'Delete series'}</button><span style="flex:1"></span><button class="btn pri" data-act="saveSeries">Save series</button></div></div>`;
 }
 
+/* ================= printable show order ================= */
+const PRINT_COLS = [['town','Hometown / club'],['tag','Tag / reg #'],['breed','Breed'],['detail','Birth date or weight'],['place','Blank “Place” column']];
+// Where each class belongs: species → section (division + sex, or showmanship)
+function printSection(cls, c){
+  if(cls.kind === 'sm'){ const sp = cls.species || 'cattle'; return {sp, key:`${sp}|sm`, label:SPECIES[sp].sm}; }
+  const meta = groupMeta(cls, S.lookup, c), d = DIV[meta.div];
+  if(!d) return {sp:'cattle', key:'cattle|other', label:'Other classes'};
+  const sex = meta.sex || 'all';
+  return {sp:d.species, key:`${d.species}|${d.key}|${sex}`, label: sex === 'all' ? `${d.label}s` : `${d.label}: ${plural(sex)}`};
+}
+function printState(sections){
+  if(!S.print || S.print.showId !== S.showId){
+    S.print = {showId:S.showId, keys:new Set(sections.map(x => x.key)), cols:{town:true, tag:true, breed:true, detail:true, place:true}, breakSp:true, breakClass:false, drives:false, big:false};
+  }
+  return S.print;
+}
+function viewPrint(){
+  if(!isManager()) return `<div class="card empty"><h3>Show managers only</h3></div>`;
+  if(!S.showsLoaded || !S.entriesLoaded) return loading();
+  if(!S.shows[S.showId]) return notFound();
+  const c = cfg(), list = classes();
+  // collect sections in show order
+  const secMap = new Map();
+  list.forEach((cls, i) => {
+    if(cls.kind === 'drive') return;
+    const sec = printSection(cls, c);
+    if(!secMap.has(sec.key)) secMap.set(sec.key, Object.assign(sec, {classes:[], head:0}));
+    const x = secMap.get(sec.key); x.classes.push({cls, num:i+1}); x.head += cls.members.length;
+  });
+  const sections = [...secMap.values()];
+  if(!sections.length) return `<div class="card empty"><h3>Nothing to print yet</h3><p class="muted">Classes appear once entries come in.</p></div>`;
+  const P = printState(sections), bySp = SP_ORDER.map(sp => [sp, sections.filter(x => x.sp === sp)]).filter(([, a]) => a.length);
+  const chosen = sections.filter(x => P.keys.has(x.key));
+  const nClasses = chosen.reduce((n, x) => n + x.classes.length, 0), nHead = chosen.reduce((n, x) => n + x.head, 0);
+  let h = `<div class="no-print">
+    <div class="who-bar"><h2 style="margin:0">Print show order</h2><button class="btn pri" data-act="doPrint"${chosen.length ? '' : ' disabled'}>🖨 Print</button></div>
+    ${!c.order ? `<div class="banner warn"><b>The show order isn’t locked yet</b>, so there are no back numbers and classes may still change. Lock it in the Show office before printing the final copy.</div>` : ''}
+    <div class="card"><div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap"><h3 style="margin:0">What to print</h3>
+      <span><button class="btn sm ghost" data-act="prAll">Select all</button> <button class="btn sm ghost" data-act="prNone">Clear</button></span></div>
+      <div class="prgrid">${bySp.map(([sp, secs]) => {
+        const allOn = secs.every(x => P.keys.has(x.key));
+        return `<div class="exh" style="margin:0"><label class="check"><input type="checkbox" data-act="prSp" data-sp="${sp}"${allOn?' checked':''}> <b>${esc(SPECIES[sp].label)}</b></label>
+          <div style="margin:6px 0 0 26px;display:grid;gap:4px">${secs.map(x => `<label class="check small prk"><input type="checkbox" data-act="prKey" data-k="${esc(x.key)}"${P.keys.has(x.key)?' checked':''}><span>${esc(x.label)}<br><span class="muted">${x.classes.length} class${x.classes.length===1?'':'es'} · ${x.head} ${x.key.endsWith('|sm') ? (x.head===1?'exhibitor':'exhibitors') : 'head'}</span></span></label>`).join('')}</div></div>`;
+      }).join('')}</div>
+      <h3 style="margin-top:16px">Details to include</h3>
+      <div style="display:flex;gap:16px;flex-wrap:wrap">${PRINT_COLS.map(([k, l]) => `<label class="check small"><input type="checkbox" data-act="prCol" data-k="${k}"${P.cols[k]?' checked':''}> ${esc(l)}</label>`).join('')}</div>
+      <h3 style="margin-top:16px">Layout</h3>
+      <div style="display:flex;gap:16px;flex-wrap:wrap">
+        <label class="check small"><input type="checkbox" data-act="prOpt" data-k="breakSp"${P.breakSp?' checked':''}> Start each species on a new page</label>
+        <label class="check small"><input type="checkbox" data-act="prOpt" data-k="breakClass"${P.breakClass?' checked':''}> Each class on its own page (ring steward sheets)</label>
+        <label class="check small"><input type="checkbox" data-act="prOpt" data-k="drives"${P.drives?' checked':''}> Include champion drives</label>
+        <label class="check small"><input type="checkbox" data-act="prOpt" data-k="big"${P.big?' checked':''}> Large print</label></div>
+      <p class="muted small" style="margin-bottom:0">${chosen.length ? `${nClasses} class${nClasses===1?'':'es'}, ${nHead} entries selected. The preview below is what prints.` : 'Pick at least one group above.'}</p></div>
+    <div class="muted small" style="margin:14px 0 6px">Preview</div></div>`;
+  h += `<div class="print-doc${P.big ? ' big' : ''}">${printDocHTML(c, list, chosen, P)}</div>`;
+  return h;
+}
+function printDocHTML(c, list, chosen, P){
+  if(!chosen.length) return '';
+  const keys = new Set(chosen.map(x => x.key)), printed = new Date().toLocaleString(undefined, {month:'short', day:'numeric', year:'numeric', hour:'numeric', minute:'2-digit'});
+  let h = `<div class="pd-head"><div class="pd-title">${esc(c.name)}</div><div class="pd-sub">${esc([longDate(c.date), c.location].filter(Boolean).join(' · '))}</div>
+    <div class="pd-sub">Show order · ${esc(chosen.length <= 4 ? chosen.map(x => x.label).join(', ') : `${chosen.length} groups selected`)} · printed ${esc(printed)}${c.order ? '' : ' · DRAFT – order not locked'}</div></div>`;
+  let lastSp = null, first = true;
+  list.forEach((cls, i) => {
+    if(cls.kind === 'drive'){
+      const prev = list.slice(0, i).reverse().find(x => x.kind !== 'drive');
+      if(!P.drives || !prev || !keys.has(printSection(prev, c).key)) return;
+      h += `<div class="pclass drive"><div class="pc-h"><span class="pc-num">${i+1}</span><span class="pc-t">${esc(cls.title)}</span></div><div class="pc-note">First and second place from each class return.</div></div>`;
+      return;
+    }
+    const sec = printSection(cls, c); if(!keys.has(sec.key)) return;
+    const spBreak = P.breakSp && lastSp !== null && sec.sp !== lastSp;
+    if(sec.sp !== lastSp) h += `<div class="pd-species${spBreak ? ' pb' : ''}">${esc(SPECIES[sec.sp].label)}</div>`;
+    lastSp = sec.sp;
+    const cb = P.breakClass && !first && !spBreak ? ' pb' : ''; first = false;
+    const isSm = cls.kind === 'sm';
+    const cols = isSm ? ['Back #','Exhibitor','Age', P.cols.town && 'Hometown / club', P.cols.place && 'Place'].filter(Boolean)
+                      : ['Back #','Exhibitor', P.cols.town && 'Hometown / club','Animal', P.cols.tag && 'Tag / reg #', P.cols.breed && 'Breed', P.cols.detail && (DIV[cls.div]?.market ? 'Weight' : 'Born'), P.cols.place && 'Place'].filter(Boolean);
+    const rows = cls.members.map(k => {
+      const L = S.lookup.get(k); if(!L) return '';
+      if(isSm){ const m = memberLabel(k);
+        return `<tr><td class="bk">${esc(m.back)}</td><td><b>${esc(L.ex.name)}</b></td><td>${esc(L.ex.age)}</td>${P.cols.town ? `<td>${esc(L.ex.town||'')}</td>` : ''}${P.cols.place ? '<td class="pl"></td>' : ''}</tr>`; }
+      const an = L.an, mk = DIV[animalDiv(an, c)]?.market;
+      return `<tr class="${an.scratched ? 'scr' : ''}"><td class="bk">${esc(backOf(k))}</td><td><b>${esc(L.ex.name)}</b></td>${P.cols.town ? `<td>${esc(L.ex.town||'')}</td>` : ''}<td>${esc(an.name||'')}${an.scratched ? ' <i>(scratched)</i>' : ''}</td>${P.cols.tag ? `<td>${esc(an.tag||'')}</td>` : ''}${P.cols.breed ? `<td>${esc(an.breed||'')}</td>` : ''}${P.cols.detail ? `<td>${mk ? (an.weight ? esc(num(an.weight).toLocaleString()) + ' lb' : '') : esc(fmtD(an.birthdate))}</td>` : ''}${P.cols.place ? '<td class="pl"></td>' : ''}</tr>`;
+    }).join('');
+    h += `<div class="pclass${cb}"><div class="pc-h"><span class="pc-num">${i+1}</span><span class="pc-t">${esc(cls.title)}</span>${cls.sub ? `<span class="pc-s">${esc(cls.sub)}</span>` : ''}<span class="pc-n">${esc([cls.range, heads(cls)].filter(Boolean).join(' · '))}</span></div>
+      ${cls.members.length ? `<table class="pt"><thead><tr>${cols.map(x => `<th${x==='Place' ? ' class="pl"' : x==='Back #' ? ' class="bk"' : ''}>${x}</th>`).join('')}</tr></thead><tbody>${rows}</tbody></table>` : '<div class="pc-note">No entries.</div>'}</div>`;
+  });
+  return h;
+}
+
 /* ================= view: show office ================= */
 const newAn = () => ({id:'a'+rid(), name:'', tag:'', breed:'', sex:'', birthdate:'', weight:'', div:'', scratched:false});
 const newEx = () => ({id:'e'+rid(), name:'', age:'', town:'', showmanship:[], animals:[newAn()]});
@@ -1252,13 +1343,13 @@ function render(force){
   if(S.view === 'welcome' && S.authReady && S.uid){ S.view = 'shows'; history.replaceState(null, '', '#shows'); }
   rebuildLookup();
   if(S.view === 'board' && S.showId && S.showsLoaded) markSeen(S.showId);
-  const inShow = ['live','board','results','enter','office'].includes(S.view) && S.showId;
+  const inShow = ['live','board','results','enter','office','print'].includes(S.view) && S.showId;
   const c = cfg(), show = S.shows[S.showId];
   $('#showName').textContent = inShow && show ? c.name : 'ShowSchedule';
   $('#showMeta').textContent = inShow && show ? [longDate(c.date), c.location].filter(Boolean).join(' · ') : '';
   let nav = [['shows','All shows'],['series','Series'],['barn','My barn'], ...(S.isOwner ? [['users','Users']] : [])].map(([k,l]) => `<a href="#${k}" class="${S.view===k || (k==='series' && S.view==='seriesOne')?'on':''}">${l}</a>`).join('');
   if(inShow){
-    const nb = unreadFor(S.showId); const t = [['live','Live'],['board', 'Board' + (nb ? ` <span class="badge">${nb}</span>` : '')],['results','Results'],['enter','Enter']]; if(isManager()) t.push(['office','Show office']);
+    const nb = unreadFor(S.showId); const t = [['live','Live'],['board', 'Board' + (nb ? ` <span class="badge">${nb}</span>` : '')],['results','Results'],['enter','Enter']]; if(isManager()) t.push(['office','Show office'], ['print','Print']);
     nav += `<span style="width:1px;background:#4a4136;margin:6px 6px"></span>` + t.map(([k,l]) => `<a href="#${k}-${esc(S.showId)}" class="${S.view===k?'on':''}">${l}</a>`).join('');
   }
   $('#tabs').innerHTML = S.view === 'welcome' ? '' : nav;
@@ -1269,7 +1360,7 @@ function render(force){
   if(S.uid && !S.noDb){ const n = S.myName || 'Account'; ac.className = 'acct'; ac.innerHTML = `<span class="av">${esc(n.trim()[0]||'?').toUpperCase()}</span>${esc(n.split(' ')[0])}`; }
   else { ac.className = 'acct out'; ac.textContent = 'Log in'; }
   if(S.loadErr && !S.showsLoaded && !['welcome','account','barn'].includes(S.view)){ $('#app').innerHTML = loadErrHTML(); renderRingbar(); return; }
-  const V = {board:viewBoard, welcome:viewWelcome, users:viewUsers, account:viewAccount, shows:viewShows, barn:viewBarn, live:viewLive, results:viewResults, enter:viewEnter, office:viewOffice, series:viewSeriesList, seriesOne:viewSeries}[S.view] || viewShows;
+  const V = {print:viewPrint, board:viewBoard, welcome:viewWelcome, users:viewUsers, account:viewAccount, shows:viewShows, barn:viewBarn, live:viewLive, results:viewResults, enter:viewEnter, office:viewOffice, series:viewSeriesList, seriesOne:viewSeries}[S.view] || viewShows;
   $('#app').innerHTML = V();
   if(fid && document.getElementById(fid)){ const s = document.getElementById(fid); s.focus(); try{ s.setSelectionRange(pos, pos); }catch(e){} }
   renderRingbar();
@@ -1424,6 +1515,13 @@ document.addEventListener('click', e => {
       if(S.confirmDel !== 'user|'+id){ S.confirmDel = 'user|'+id; render(true); return; }
       S.confirmDel = null;
       adminCall({action:'delete', id}).then(() => { S.users = (S.users||[]).filter(u => u.id !== id); toast('Account removed'); render(true); }, e => toast(e.message, true)); break; }
+    case 'doPrint': window.print(); break;
+    case 'prAll': S.print.keys = new Set(document.querySelectorAll('[data-act=prKey]').length ? [...document.querySelectorAll('[data-act=prKey]')].map(x => x.dataset.k) : []); render(true); break;
+    case 'prNone': S.print.keys = new Set(); render(true); break;
+    case 'prKey': el.checked ? S.print.keys.add(el.dataset.k) : S.print.keys.delete(el.dataset.k); render(true); break;
+    case 'prSp': [...document.querySelectorAll('[data-act=prKey]')].filter(x => x.dataset.k.startsWith(el.dataset.sp + '|')).forEach(x => el.checked ? S.print.keys.add(x.dataset.k) : S.print.keys.delete(x.dataset.k)); render(true); break;
+    case 'prCol': S.print.cols[el.dataset.k] = el.checked; render(true); break;
+    case 'prOpt': S.print[el.dataset.k] = el.checked; render(true); break;
     case 'authTab': S.authTab = el.dataset.k; S.authMsg = ''; S.authErr = ''; render(true); break;
     case 'logout': sb.auth.signOut().then(() => { toast('Logged out'); location.hash = 'welcome'; }); break;
     case 'showWhen': S.showWhen = el.dataset.k; render(true); break;
@@ -1628,7 +1726,7 @@ document.addEventListener('change', e => {
 document.addEventListener('focusout', () => setTimeout(() => { if(S.pending && !isTyping()) render(); }, 0));
 function route(){
   const h = (location.hash||'').slice(1);
-  const m = h.match(/^(live|board|results|enter|office)-([A-Za-z0-9]+)$/), sm = h.match(/^series-([A-Za-z0-9]+)$/);
+  const m = h.match(/^(live|board|results|enter|office|print)-([A-Za-z0-9]+)$/), sm = h.match(/^series-([A-Za-z0-9]+)$/);
   if(m){ if(S.showId !== m[2]){ S.editing = null; S.setDraft = {}; S.showSettings = false; S.expanded = new Set(); S.placeClass = null; S.placeDraft = {}; S.mgrHits = []; S.postDraft = null; S.postEdit = null; } S.view = m[1]; S.showId = m[2]; if(S.openSettingsFor === m[2]){ S.showSettings = true; S.openSettingsFor = null; } }
   else if(sm){ if(S.seriesId !== sm[1]){ S.serDraft = null; S.serCat = 'overall'; S.serBreed = ''; } S.view = 'seriesOne'; S.seriesId = sm[1]; }
   else if(/^barn(-showmen|-animals)?$/.test(h)){ S.view = 'barn'; S.barnTab = h === 'barn-animals' ? 'animals' : 'showmen'; }

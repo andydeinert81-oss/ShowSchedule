@@ -208,3 +208,40 @@ nav a .badge{margin-left:4px;font-size:.7rem;padding:3px 6px}
 .creds span{display:block}.creds b{font-size:1.05rem;overflow-wrap:anywhere}
 @media (max-width:520px){.creds{grid-template-columns:1fr}}
 .bulkbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:#fff;border:1px solid var(--line);border-radius:10px;padding:8px 12px;margin-top:10px}
+
+/* printable show order */
+.prgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:10px;margin-top:10px}
+.print-doc{background:#fff;color:#000;border:1px solid var(--line);border-radius:6px;padding:28px 32px;font:11pt/1.35 Barlow,Arial,sans-serif}
+.pd-head{border-bottom:2px solid #000;padding-bottom:8px;margin-bottom:10px}
+.pd-title{font:700 20pt/1.1 "Barlow Condensed",Arial,sans-serif}
+.pd-sub{font-size:10pt;color:#333}
+.pd-species{font:700 15pt "Barlow Condensed",Arial,sans-serif;text-transform:uppercase;letter-spacing:.06em;border-bottom:1px solid #000;margin:16px 0 6px}
+.pclass{margin:10px 0 14px;break-inside:avoid-page}
+.pc-h{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;border-bottom:1px solid #999;padding-bottom:3px;margin-bottom:4px}
+.pc-num{font:700 11pt Barlow,Arial;background:#000;color:#fff;border-radius:4px;padding:1px 7px}
+.pc-t{font:700 13pt "Barlow Condensed",Arial,sans-serif}
+.pc-s{font-weight:600}
+.pc-n{margin-left:auto;font-size:9.5pt;color:#333}
+.pc-note{font-size:10pt;color:#333;font-style:italic}
+.pt{width:100%;border-collapse:collapse;font-size:10.5pt}
+.pt th{font:700 8.5pt Barlow,Arial;text-transform:uppercase;letter-spacing:.06em;color:#000;border-bottom:1px solid #000;padding:3px 6px;text-align:left}
+.pt td{padding:4px 6px;border-bottom:1px solid #ccc;vertical-align:top}
+.pt tr:nth-child(even) td{background:#f4f4f4}
+.pt .bk{width:56px;font:700 12pt "Barlow Condensed",Arial,sans-serif}
+.pt .pl{width:70px;border-left:1px solid #999}
+.pt tr.scr td{color:#777;text-decoration:line-through}
+.print-doc.big{font-size:13pt}.print-doc.big .pt{font-size:12.5pt}.print-doc.big .pc-t{font-size:16pt}.print-doc.big .pt .bk{font-size:15pt}
+.pb{break-before:page}
+@media print{
+  @page{margin:.5in}
+  html,body{background:#fff!important}
+  header,nav,#ringbar,#toast,.no-print{display:none!important}
+  main{padding:0!important}.wrap{max-width:none!important}
+  .print-doc{border:0;border-radius:0;padding:0}
+  .pt thead{display:table-header-group}
+  .pt tr{break-inside:avoid}
+  .pt tr:nth-child(even) td{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  .pc-num{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+}
+.pt th.bk{font:700 8.5pt Barlow,Arial;white-space:nowrap}
+.prk{align-items:flex-start!important}.prk input{margin-top:2px}
