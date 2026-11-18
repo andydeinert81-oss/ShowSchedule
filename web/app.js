@@ -377,7 +377,7 @@ function lineupHTML(cls, hlKeys){
   }).join('');
   return `<div class="lineup">${rows}</div>`;
 }
-const heads = cls => cls.kind==='drive' ? 'Drive' : `${cls.members.length} ${cls.kind==='sm' ? 'exhibitor' : 'head'}${cls.members.length===1?'':'s'}`;
+const heads = cls => cls.kind==='drive' ? 'Drive' : cls.kind==='sm' ? `${cls.members.length} exhibitor${cls.members.length===1?'':'s'}` : `${cls.members.length} head`;
 const subLine = cls => [cls.sub, cls.range, heads(cls)].filter(Boolean).map(esc).join(' · ');
 
 /* ================= following ================= */
